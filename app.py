@@ -13,7 +13,8 @@ from PIL import Image
 # ==========================================
 st.set_page_config(page_title="LPBS CW Tracker", layout="wide", page_icon="🔶")
 
-build_time_str = "19:00:00 - 05/01/2026" 
+# UPDATE: Giờ thực tế
+build_time_str = "18:20:00 - 05/01/2026" 
 
 st.markdown("""
 <style>
@@ -36,7 +37,6 @@ st.markdown("""
         margin-bottom: 15px;
         transition: transform 0.2s;
     }
-    .metric-card:hover { transform: translateY(-2px); }
     
     .cw-profile-box {
         background-color: #E3F2FD;
@@ -148,37 +148,40 @@ class FinancialEngine:
             return "ATM (Ngang giá)", "orange"
 
 # ==========================================
-# 4. AI SERVICE LAYER (V9.3 - GEMINI 3.0 PRO)
+# 4. AI SERVICE LAYER (V9.4 - BULLETPROOF REGEX)
 # ==========================================
 def process_image_with_gemini(image, api_key):
     try:
         genai.configure(api_key=api_key)
         
-        # --- FIX: DÙNG GEMINI 3.0 PRO ---
-        # Mạnh nhất hiện tại (2026), Vision tốt nhất
-        model_name = 'gemini-3-pro-preview' 
+        # Vẫn dùng model Pro mới nhất
+        model_name = 'gemini-1.5-pro-latest' 
         
         generation_config = genai.types.GenerationConfig(temperature=0.0)
-        
         model = genai.GenerativeModel(model_name)
         
         prompt = """
-        Bạn là một trợ lý nhập liệu tài chính (OCR) cao cấp. Nhiệm vụ:
-        1. Nhìn KỸ vào ảnh biên lai hoặc màn hình đặt lệnh.
-        2. Tìm chính xác Mã chứng khoán. Phân biệt rõ "CW..." và "CV..." (Ví dụ: CWVHM khác CVVHM).
-        3. Tìm Số lượng và Giá.
+        Bạn là một trợ lý nhập liệu tài chính (OCR). Nhiệm vụ:
+        1. Tìm chính xác Mã chứng khoán (ví dụ: CMWG..., CWVHM..., VHM, MWG...).
+        2. Tìm Số lượng và Giá.
         
-        Trả về JSON:
-        {"symbol": "XXX", "qty": 1000, "price": 50000}
+        QUAN TRỌNG: Chỉ trả về chuỗi JSON, không thêm bất kỳ lời dẫn nào.
+        Format: {"symbol": "XXX", "qty": 1000, "price": 50000}
         """
         
         response = model.generate_content([prompt, image], generation_config=generation_config)
-        
         text = response.text.strip()
-        if text.startswith("```json"): text = text[7:-3]
-        elif text.startswith("```"): text = text[3:-3]
         
-        return json.loads(text) 
+        # --- FIX: TRÍCH XUẤT JSON BẰNG REGEX ---
+        # Tìm đoạn text bắt đầu bằng { và kết thúc bằng }
+        match = re.search(r'\{.*\}', text, re.DOTALL)
+        if match:
+            json_str = match.group(0)
+            return json.loads(json_str)
+        else:
+            # Fallback nếu không tìm thấy cấu trúc JSON
+            return {"error": "Không tìm thấy dữ liệu JSON hợp lệ."}
+            
     except Exception as e:
         return {"error": str(e)}
 
@@ -215,7 +218,7 @@ def render_cw_profile(cw_code, und_code, exercise_price, ratio, maturity_date, d
 # ==========================================
 def main():
     st.title("🔶 LPBS CW Tracker & Simulator")
-    st.caption(f"System: V9.3 | Build: {build_time_str} | Gemini 3.0 Pro")
+    st.caption(f"System: V9.4 | Build: {build_time_str} | Gemini Pro (Regex Fix)")
 
     if 'ocr_result' not in st.session_state:
         st.session_state['ocr_result'] = None
@@ -231,11 +234,14 @@ def main():
         
         if uploaded_img and api_key:
             if st.button("🚀 Phân tích ngay"):
-                with st.spinner("Gemini 3.0 Pro đang xử lý..."):
+                with st.spinner("Gemini Pro đang xử lý..."):
                     image = Image.open(uploaded_img)
                     result = process_image_with_gemini(image, api_key)
-                    if "error" in result: st.error(result['error'])
-                    else: st.session_state['ocr_result'] = result
+                    
+                    if "error" in result: 
+                        st.error(f"Lỗi AI: {result['error']}")
+                    else: 
+                        st.session_state['ocr_result'] = result
             
             if st.session_state['ocr_result']:
                 with st.expander("👁️ Debug Info", expanded=True):
@@ -244,13 +250,12 @@ def main():
         st.divider()
         master_df = DataManager.get_default_master_data()
         
-        # Clean Data
         if "Giá thực hiện" in master_df.columns:
             master_df["Giá thực hiện"] = master_df["Giá thực hiện"].apply(DataManager.clean_number_value)
             master_df["Tỷ lệ CĐ"] = master_df["Tỷ lệ CĐ"].apply(DataManager.clean_number_value)
 
-        # Auto-Fill Logic (V9.3)
         default_qty, default_price, default_index = 1000.0, 1000.0, 0
+        
         if st.session_state['ocr_result']:
             res = st.session_state['ocr_result']
             if res.get('qty'): default_qty = float(res['qty'])
@@ -267,13 +272,13 @@ def main():
 
                 if mask_exact.any():
                     default_index = master_df.index[mask_exact].tolist()[0]
-                    st.toast(f"✅ AI 3.0 Pro: Tìm thấy {det_sym}")
+                    st.toast(f"✅ AI Found: {det_sym}")
                 elif mask_core.any():
                     default_index = master_df.index[mask_core].tolist()[0]
                     found_code = master_df.iloc[default_index]['Mã CW']
                     st.toast(f"⚠️ Smart Mapping: '{det_sym}' -> '{found_code}'")
                 else:
-                    st.error(f"❌ Không tìm thấy mã: '{det_sym}'")
+                    st.error(f"❌ Not Found: '{det_sym}'")
 
         st.header("🛠️ Nhập liệu")
         cw_list = master_df["Mã CW"].unique()
@@ -288,7 +293,6 @@ def main():
         qty = st.number_input("Số lượng", value=default_qty, step=100.0)
         cost_price = st.number_input("Giá vốn (VND)", value=default_price, step=50.0)
 
-    # --- MAIN DISPLAY ---
     days_left = DataManager.calc_days_to_maturity(val_maturity_date)
     render_cw_profile(selected_cw, val_underlying_code, val_exercise, val_ratio, val_maturity_date, days_left)
     
@@ -303,7 +307,6 @@ def main():
         st.session_state['sim_target_price'] = int(current_real_price)
     anchor_price = st.session_state['anchor_price']
 
-    # --- TABS ---
     tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "🎲 Simulator", "📉 Chart P/L"])
 
     with tab1:
