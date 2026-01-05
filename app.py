@@ -19,12 +19,12 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. DATA LAYER (DYNAMIC IMPORT)
+# 2. DATA LAYER (ROBUST IMPORT)
 # ==========================================
 class DataManager:
     @staticmethod
     def get_default_master_data():
-        """Dữ liệu mặc định nếu chưa upload file"""
+        """Dữ liệu mặc định an toàn"""
         return pd.DataFrame([
             {"Mã CW": "CHPG2316", "Mã CS": "HPG", "Tỷ lệ CĐ": 2, "Giá thực hiện": 28000, "Ngày đáo hạn": "2026-06-01", "Trạng thái": "Listed"},
             {"Mã CW": "CMWG2305", "Mã CS": "MWG", "Tỷ lệ CĐ": 5, "Giá thực hiện": 45000, "Ngày đáo hạn": "2026-12-31", "Trạng thái": "Pre-listing"},
@@ -34,14 +34,13 @@ class DataManager:
     @staticmethod
     def get_realtime_price(symbol):
         # Giả lập giá biến động (Mockup Real-time)
-        # Trong thực tế: Thay bằng call API vnstock
         base_prices = {
             "HPG": 28500, "MWG": 48200, "VHM": 41800, "STB": 30500, "VNM": 66000,
             "FPT": 95000, "MBB": 18500, "TCB": 33000, "VPB": 19200, "MSN": 62000,
             "VIB": 21500, "SHB": 11200, "ACB": 24500
         }
         noise = np.random.uniform(0.99, 1.01)
-        return base_prices.get(symbol, 20000) * noise # Mặc định 20k nếu ko tìm thấy
+        return base_prices.get(symbol, 20000) * noise
 
 # ==========================================
 # 3. LOGIC LAYER
@@ -49,45 +48,77 @@ class DataManager:
 class FinancialEngine:
     @staticmethod
     def calc_intrinsic_value(price_underlying, price_exercise, ratio):
-        return max((price_underlying - price_exercise) / ratio, 0)
+        # Chuyển đổi an toàn sang float trước khi tính
+        try:
+            p_u = float(price_underlying)
+            p_e = float(price_exercise)
+            r = float(ratio)
+            return max((p_u - p_e) / r, 0)
+        except:
+            return 0
 
     @staticmethod
     def calc_bep(price_exercise, price_cost, ratio):
-        return price_exercise + (price_cost * ratio)
+        # Chuyển đổi an toàn sang float trước khi tính
+        try:
+            p_e = float(price_exercise)
+            p_c = float(price_cost)
+            r = float(ratio)
+            return p_e + (p_c * r)
+        except:
+            return 0
 
 # ==========================================
 # 4. UI PRESENTATION
 # ==========================================
 def main():
     st.title("📈 LPBank Invest - CW Tracker & Simulator")
-    st.caption("System Architect: AI Guardian | Version: 4.0 (Enterprise Import)")
+    st.caption("System Architect: AI Guardian | Version: 4.1 (Stable Data Type)")
 
     # --- SIDEBAR: IMPORT & CONFIG ---
     with st.sidebar:
         st.header("📂 Dữ liệu Nguồn (Master Data)")
         
-        # FEATURE: FILE UPLOADER
         uploaded_file = st.file_uploader("Upload danh sách CW (CSV)", type=["csv"])
         
         if uploaded_file is not None:
             try:
                 master_df = pd.read_csv(uploaded_file)
+                
+                # === DATA CLEANING LAYER (FIXED) ===
+                # 1. Xóa khoảng trắng ở tên cột
+                master_df.columns = master_df.columns.str.strip()
+                
+                # 2. Ép kiểu số cho các cột quan trọng
+                numeric_cols = ["Giá thực hiện", "Tỷ lệ CĐ"]
+                for col in numeric_cols:
+                    if col in master_df.columns:
+                        # Nếu cột đang là dạng chữ (object), xóa dấu phẩy/chấm
+                        if master_df[col].dtype == object:
+                            master_df[col] = master_df[col].astype(str).str.replace(',', '').str.replace('.', '')
+                        # Chuyển sang số, nếu lỗi thì điền 0
+                        master_df[col] = pd.to_numeric(master_df[col], errors='coerce').fillna(0)
+                # ===================================
+
                 st.success(f"✅ Đã tải {len(master_df)} mã CW từ file.")
             except Exception as e:
-                st.error("Lỗi định dạng file CSV!")
+                st.error(f"Lỗi đọc file: {e}")
                 master_df = DataManager.get_default_master_data()
         else:
-            st.info("Đang dùng dữ liệu mẫu. Hãy upload file CSV để cập nhật danh sách 13 mã mới nhất.")
+            st.info("Đang dùng dữ liệu mẫu. Hãy upload file CSV để cập nhật.")
             master_df = DataManager.get_default_master_data()
 
         st.divider()
         st.header("🛠️ Nhập liệu Cá nhân")
         
-        # Chọn mã từ danh sách (Dynamic)
+        # Kiểm tra dữ liệu rỗng
+        if master_df.empty:
+            st.error("File CSV không có dữ liệu hợp lệ!")
+            st.stop()
+
         cw_list = master_df["Mã CW"].unique()
         selected_cw = st.selectbox("Chọn Mã CW", cw_list)
         
-        # Lấy thông tin chi tiết
         cw_info = master_df[master_df["Mã CW"] == selected_cw].iloc[0]
         
         qty = st.number_input("Số lượng sở hữu", value=1000, step=100)
@@ -96,16 +127,15 @@ def main():
         st.markdown(f"""
         **Thông số kỹ thuật:**
         - Mã CS: `{cw_info['Mã CS']}`
-        - Giá TH: `{cw_info['Giá thực hiện']:,}`
-        - Tỷ lệ: `{cw_info['Tỷ lệ CĐ']}:1`
+        - Giá TH: `{cw_info['Giá thực hiện']:,.0f}`
+        - Tỷ lệ: `{cw_info['Tỷ lệ CĐ']}`
         - Đáo hạn: `{cw_info['Ngày đáo hạn']}`
         """)
 
     # --- DATA PROCESSING ---
-    # 1. Lấy giá Real-time
     current_real_price = DataManager.get_realtime_price(cw_info["Mã CS"])
     
-    # 2. Snapshot Mechanism (Fix lỗi trượt giá)
+    # Snapshot Mechanism
     if 'anchor_cw' not in st.session_state or st.session_state['anchor_cw'] != selected_cw:
         st.session_state['anchor_cw'] = selected_cw
         st.session_state['anchor_price'] = current_real_price
@@ -115,13 +145,13 @@ def main():
 
     # --- CORE CALCULATION ---
     engine = FinancialEngine()
+    # Truyền giá trị vào hàm tính toán (đã được clean ở trên)
     bep = engine.calc_bep(cw_info["Giá thực hiện"], cost_price, cw_info["Tỷ lệ CĐ"])
     
     if cw_info['Trạng thái'] == 'Pre-listing':
         current_cw_price = engine.calc_intrinsic_value(current_real_price, cw_info["Giá thực hiện"], cw_info["Tỷ lệ CĐ"])
         note = "⚠️ Giá trị nội tại (Pre-listing)"
     else:
-        # Giả lập giá thị trường CW (Trong thực tế lấy từ API)
         market_cw_price = engine.calc_intrinsic_value(current_real_price, cw_info["Giá thực hiện"], cw_info["Tỷ lệ CĐ"]) * np.random.uniform(1.0, 1.05)
         current_cw_price = market_cw_price
         note = "✅ Giá thị trường (Listed)"
