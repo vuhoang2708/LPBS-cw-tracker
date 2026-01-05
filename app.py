@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+import re # Thêm thư viện xử lý Regex
 
 # ==========================================
 # 1. CONFIG & SYSTEM SETTINGS
@@ -19,12 +20,11 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. DATA LAYER (ROBUST IMPORT)
+# 2. DATA LAYER
 # ==========================================
 class DataManager:
     @staticmethod
     def get_default_master_data():
-        """Dữ liệu mặc định an toàn"""
         return pd.DataFrame([
             {"Mã CW": "CHPG2316", "Mã CS": "HPG", "Tỷ lệ CĐ": 2, "Giá thực hiện": 28000, "Ngày đáo hạn": "2026-06-01", "Trạng thái": "Listed"},
             {"Mã CW": "CMWG2305", "Mã CS": "MWG", "Tỷ lệ CĐ": 5, "Giá thực hiện": 45000, "Ngày đáo hạn": "2026-12-31", "Trạng thái": "Pre-listing"},
@@ -33,7 +33,6 @@ class DataManager:
 
     @staticmethod
     def get_realtime_price(symbol):
-        # Giả lập giá biến động (Mockup Real-time)
         base_prices = {
             "HPG": 28500, "MWG": 48200, "VHM": 41800, "STB": 30500, "VNM": 66000,
             "FPT": 95000, "MBB": 18500, "TCB": 33000, "VPB": 19200, "MSN": 62000,
@@ -48,18 +47,17 @@ class DataManager:
 class FinancialEngine:
     @staticmethod
     def calc_intrinsic_value(price_underlying, price_exercise, ratio):
-        # Chuyển đổi an toàn sang float trước khi tính
         try:
             p_u = float(price_underlying)
             p_e = float(price_exercise)
             r = float(ratio)
+            if r == 0: return 0 # Tránh chia cho 0
             return max((p_u - p_e) / r, 0)
         except:
             return 0
 
     @staticmethod
     def calc_bep(price_exercise, price_cost, ratio):
-        # Chuyển đổi an toàn sang float trước khi tính
         try:
             p_e = float(price_exercise)
             p_c = float(price_cost)
@@ -73,7 +71,7 @@ class FinancialEngine:
 # ==========================================
 def main():
     st.title("📈 LPBank Invest - CW Tracker & Simulator")
-    st.caption("System Architect: AI Guardian | Version: 4.1 (Stable Data Type)")
+    st.caption("System Architect: AI Guardian | Version: 4.2 (Fix Data Parsing Only)")
 
     # --- SIDEBAR: IMPORT & CONFIG ---
     with st.sidebar:
@@ -84,21 +82,19 @@ def main():
         if uploaded_file is not None:
             try:
                 master_df = pd.read_csv(uploaded_file)
-                
-                # === DATA CLEANING LAYER (FIXED) ===
-                # 1. Xóa khoảng trắng ở tên cột
                 master_df.columns = master_df.columns.str.strip()
                 
-                # 2. Ép kiểu số cho các cột quan trọng
+                # === FIX: LOGIC LÀM SẠCH DỮ LIỆU THÔNG MINH HƠN ===
                 numeric_cols = ["Giá thực hiện", "Tỷ lệ CĐ"]
                 for col in numeric_cols:
                     if col in master_df.columns:
-                        # Nếu cột đang là dạng chữ (object), xóa dấu phẩy/chấm
-                        if master_df[col].dtype == object:
-                            master_df[col] = master_df[col].astype(str).str.replace(',', '').str.replace('.', '')
-                        # Chuyển sang số, nếu lỗi thì điền 0
+                        # Chỉ giữ lại số và dấu chấm (cho số thập phân)
+                        # Loại bỏ dấu phẩy, chữ cái, dấu hai chấm (ví dụ 5:1 -> 51 -> Sai, cần xử lý kỹ)
+                        # Logic mới: Xóa tất cả ký tự KHÔNG phải là số hoặc dấu chấm
+                        master_df[col] = master_df[col].astype(str).apply(lambda x: re.sub(r'[^\d.]', '', x))
+                        # Chuyển sang số
                         master_df[col] = pd.to_numeric(master_df[col], errors='coerce').fillna(0)
-                # ===================================
+                # ==================================================
 
                 st.success(f"✅ Đã tải {len(master_df)} mã CW từ file.")
             except Exception as e:
@@ -111,7 +107,6 @@ def main():
         st.divider()
         st.header("🛠️ Nhập liệu Cá nhân")
         
-        # Kiểm tra dữ liệu rỗng
         if master_df.empty:
             st.error("File CSV không có dữ liệu hợp lệ!")
             st.stop()
@@ -135,7 +130,7 @@ def main():
     # --- DATA PROCESSING ---
     current_real_price = DataManager.get_realtime_price(cw_info["Mã CS"])
     
-    # Snapshot Mechanism
+    # Snapshot Mechanism (GIỮ NGUYÊN LOGIC CŨ)
     if 'anchor_cw' not in st.session_state or st.session_state['anchor_cw'] != selected_cw:
         st.session_state['anchor_cw'] = selected_cw
         st.session_state['anchor_price'] = current_real_price
@@ -145,7 +140,6 @@ def main():
 
     # --- CORE CALCULATION ---
     engine = FinancialEngine()
-    # Truyền giá trị vào hàm tính toán (đã được clean ở trên)
     bep = engine.calc_bep(cw_info["Giá thực hiện"], cost_price, cw_info["Tỷ lệ CĐ"])
     
     if cw_info['Trạng thái'] == 'Pre-listing':
@@ -179,6 +173,7 @@ def main():
         st.subheader("Giả lập Lợi nhuận theo Kỳ vọng")
         st.write(f"Giá tham chiếu cố định: **{anchor_price:,.0f} VND**")
         
+        # GIỮ NGUYÊN LOGIC SLIDER
         target_price = st.slider(
             f"Giá mục tiêu {cw_info['Mã CS']}", 
             min_value=int(anchor_price * 0.8), 
