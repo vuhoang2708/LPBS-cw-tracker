@@ -31,7 +31,7 @@ class DataManager:
 
     @staticmethod
     def get_realtime_price(symbol):
-        # Giả lập giá có biến động nhẹ
+        # Giả lập giá biến động
         base_prices = {
             "HPG": 28500, "MWG": 48200, "VHM": 41800,
             "CHPG2301": 4300, "CVHM2302": 550
@@ -56,7 +56,7 @@ class FinancialEngine:
 # ==========================================
 def main():
     st.title("📈 LPBank Invest - CW Tracker & Simulator")
-    st.caption("System Architect: AI Guardian | Version: 3.1 (Stable Slider)")
+    st.caption("System Architect: AI Guardian | Version: 3.2 (Snapshot Fix)")
 
     # --- SIDEBAR ---
     with st.sidebar:
@@ -71,24 +71,30 @@ def main():
         st.info(f"ℹ️ **Thông tin {selected_cw}**\n\n- Mã CS: {cw_info['Mã CS']}\n- Giá TH: {cw_info['Giá thực hiện']:,}\n- Tỷ lệ: {cw_info['Tỷ lệ CĐ']}:1")
 
     # --- DATA PROCESSING ---
-    price_underlying = DataManager.get_realtime_price(cw_info["Mã CS"])
+    # 1. Lấy giá Real-time (Biến động liên tục)
+    current_real_price = DataManager.get_realtime_price(cw_info["Mã CS"])
     
-    # --- FIX: SESSION STATE FOR SLIDER ---
-    # Logic: Chỉ reset thanh trượt về giá thị trường khi người dùng đổi Mã CW
-    if "last_cw" not in st.session_state or st.session_state["last_cw"] != selected_cw:
-        st.session_state["last_cw"] = selected_cw
-        st.session_state["sim_slider_val"] = int(price_underlying) # Reset slider về giá hiện tại
+    # 2. Xử lý State cho Simulator (QUAN TRỌNG: SNAPSHOT MECHANISM)
+    # Nếu chưa có 'anchor_cw' hoặc người dùng đổi mã CW khác
+    if 'anchor_cw' not in st.session_state or st.session_state['anchor_cw'] != selected_cw:
+        st.session_state['anchor_cw'] = selected_cw
+        st.session_state['anchor_price'] = current_real_price # Chụp lại giá lúc mới vào làm mốc
+        st.session_state['sim_target_price'] = int(current_real_price) # Reset thanh trượt về mốc này
+
+    # Lấy giá mốc ra để tính Min/Max cho Slider (Giá này ĐỨNG YÊN, không nhảy)
+    anchor_price = st.session_state['anchor_price']
 
     # --- CORE CALCULATION ---
     engine = FinancialEngine()
     bep = engine.calc_bep(cw_info["Giá thực hiện"], cost_price, cw_info["Tỷ lệ CĐ"])
     
+    # Tính giá CW hiện tại (Dùng giá Real-time để hiển thị Dashboard cho đúng thực tế)
     if cw_info['Trạng thái'] == 'Pre-listing':
-        current_cw_price = engine.calc_intrinsic_value(price_underlying, cw_info["Giá thực hiện"], cw_info["Tỷ lệ CĐ"])
+        current_cw_price = engine.calc_intrinsic_value(current_real_price, cw_info["Giá thực hiện"], cw_info["Tỷ lệ CĐ"])
         note = "⚠️ Giá trị nội tại (Pre-listing)"
     else:
         market_cw_price = DataManager.get_realtime_price(selected_cw)
-        current_cw_price = market_cw_price if market_cw_price > 0 else engine.calc_intrinsic_value(price_underlying, cw_info["Giá thực hiện"], cw_info["Tỷ lệ CĐ"])
+        current_cw_price = market_cw_price if market_cw_price > 0 else engine.calc_intrinsic_value(current_real_price, cw_info["Giá thực hiện"], cw_info["Tỷ lệ CĐ"])
         note = "✅ Giá thị trường (Listed)"
 
     pnl = (current_cw_price - cost_price) * qty
@@ -99,27 +105,27 @@ def main():
 
     with tab1:
         col1, col2, col3, col4 = st.columns(4)
-        col1.metric(f"Giá {cw_info['Mã CS']}", f"{price_underlying:,.0f} ₫")
+        col1.metric(f"Giá {cw_info['Mã CS']}", f"{current_real_price:,.0f} ₫")
         col2.metric("Giá CW Hiện tại", f"{current_cw_price:,.0f} ₫", delta=note, delta_color="off")
         col3.metric("Điểm Hòa Vốn (BEP)", f"{bep:,.0f} ₫")
         col4.metric("Lãi/Lỗ (P/L)", f"{pnl:,.0f} ₫", f"{pnl_pct:.2f}%")
 
-        if price_underlying < bep:
-            diff = ((bep - price_underlying) / price_underlying) * 100
+        if current_real_price < bep:
+            diff = ((bep - current_real_price) / current_real_price) * 100
             st.warning(f"📉 Cần **{cw_info['Mã CS']}** tăng thêm **{diff:.2f}%** (lên mức {bep:,.0f}) để về bờ.")
         else:
             st.success(f"🎉 Đã về bờ! Bạn đang lãi trên mỗi biến động của {cw_info['Mã CS']}.")
 
     with tab2:
         st.subheader("Giả lập Lợi nhuận theo Kỳ vọng")
-        st.write("Kéo thanh trượt để thay đổi giá Cổ phiếu cơ sở tương lai:")
+        st.write(f"Giá tham chiếu cố định: **{anchor_price:,.0f} VND** (Không bị nhảy theo thị trường)")
         
-        # SLIDER ĐÃ FIX: Dùng key="sim_slider_val" để liên kết với Session State
+        # SLIDER FIX: Dùng Min/Max cố định theo anchor_price
         target_price = st.slider(
             f"Giá mục tiêu {cw_info['Mã CS']}", 
-            min_value=int(price_underlying * 0.8), 
-            max_value=int(price_underlying * 1.5), 
-            key="sim_slider_val", # Quan trọng: Key này giúp Streamlit nhớ vị trí
+            min_value=int(anchor_price * 0.8), 
+            max_value=int(anchor_price * 1.5), 
+            key="sim_target_price", # Key này lưu giá trị vào session_state
             step=100
         )
         
@@ -136,7 +142,8 @@ def main():
 
     with tab3:
         st.subheader("Phân tích Điểm Hòa Vốn Trực quan")
-        x_values = np.linspace(price_underlying * 0.8, price_underlying * 1.2, 50)
+        # Vẽ biểu đồ dựa trên giá Real-time để thấy vị trí hiện tại chính xác nhất
+        x_values = np.linspace(current_real_price * 0.8, current_real_price * 1.2, 50)
         y_pnl = []
         for x in x_values:
             cw_val = engine.calc_intrinsic_value(x, cw_info["Giá thực hiện"], cw_info["Tỷ lệ CĐ"])
@@ -146,7 +153,7 @@ def main():
         fig.add_trace(go.Scatter(x=x_values, y=y_pnl, mode='lines', name='P/L Profile', line=dict(color='blue', width=3)))
         fig.add_vline(x=bep, line_width=2, line_dash="dash", line_color="orange", annotation_text="Điểm Hòa Vốn")
         fig.add_hline(y=0, line_width=1, line_color="gray")
-        fig.add_trace(go.Scatter(x=[price_underlying], y=[pnl], mode='markers', name='Hiện tại', marker=dict(color='red', size=12)))
+        fig.add_trace(go.Scatter(x=[current_real_price], y=[pnl], mode='markers', name='Hiện tại', marker=dict(color='red', size=12)))
         
         fig.update_layout(
             title=f"Biểu đồ P/L của {selected_cw} theo giá {cw_info['Mã CS']}",
