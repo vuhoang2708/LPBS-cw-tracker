@@ -15,12 +15,12 @@ st.markdown("""
     .stTabs [data-baseweb="tab-list"] { gap: 24px; }
     .stTabs [data-baseweb="tab"] { height: 50px; white-space: pre-wrap; background-color: #f0f2f6; border-radius: 4px 4px 0px 0px; gap: 1px; padding-top: 10px; padding-bottom: 10px; }
     .stTabs [aria-selected="true"] { background-color: #FFFFFF; border-bottom: 2px solid #4CAF50; }
-    .debug-box { background-color: #ffebee; color: #c62828; padding: 10px; border-radius: 5px; font-size: 0.9em; margin-bottom: 10px; border: 1px solid #ef9a9a; }
+    .debug-box { background-color: #e3f2fd; color: #0d47a1; padding: 10px; border-radius: 5px; font-size: 0.9em; margin-bottom: 10px; border: 1px solid #90caf9; }
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. DATA LAYER (SMART MAPPING)
+# 2. DATA LAYER
 # ==========================================
 class DataManager:
     @staticmethod
@@ -42,7 +42,6 @@ class DataManager:
 
     @staticmethod
     def smart_find_column(df, keywords):
-        """Tìm cột trong CSV bất kể viết hoa/thường hay có dấu"""
         for col in df.columns:
             col_lower = col.lower()
             for kw in keywords:
@@ -50,44 +49,43 @@ class DataManager:
                     return col
         return None
 
+    @staticmethod
+    def clean_number_value(val):
+        s = str(val)
+        if ':' in s: s = s.split(':')[0] # Xử lý 5:1 -> lấy 5
+        s = re.sub(r'[^\d.]', '', s)     # Xóa ký tự lạ
+        try:
+            return float(s)
+        except:
+            return 0.0
+
 # ==========================================
 # 3. LOGIC LAYER
 # ==========================================
 class FinancialEngine:
     @staticmethod
     def calc_intrinsic_value(price_underlying, price_exercise, ratio):
-        try:
-            p_u = float(price_underlying)
-            p_e = float(price_exercise)
-            r = float(ratio)
-            if r <= 0: return 0
-            return max((p_u - p_e) / r, 0)
-        except:
-            return 0
+        if ratio <= 0: return 0
+        return max((price_underlying - price_exercise) / ratio, 0)
 
     @staticmethod
     def calc_bep(price_exercise, price_cost, ratio):
-        try:
-            p_e = float(price_exercise)
-            p_c = float(price_cost)
-            r = float(ratio)
-            return p_e + (p_c * r)
-        except:
-            return 0
+        return price_exercise + (price_cost * ratio)
 
 # ==========================================
 # 4. UI PRESENTATION
 # ==========================================
 def main():
     st.title("📈 LPBank Invest - CW Tracker & Simulator")
-    st.caption("System Architect: AI Guardian | Version: 5.0 (Smart Mapping & Debug)")
+    
+    # --- HIỂN THỊ ĐÚNG YÊU CẦU ---
+    st.caption("System Architect: AI Guardian | Build: 15:30 05/01/2026")
 
-    # --- SIDEBAR: IMPORT ---
+    # --- SIDEBAR ---
     with st.sidebar:
         st.header("📂 Dữ liệu Nguồn")
         uploaded_file = st.file_uploader("Upload CSV", type=["csv"])
         
-        # Biến lưu tên cột đã tìm thấy
         col_exercise = "Giá thực hiện"
         col_ratio = "Tỷ lệ CĐ"
         col_code = "Mã CW"
@@ -96,10 +94,9 @@ def main():
         if uploaded_file is not None:
             try:
                 master_df = pd.read_csv(uploaded_file)
-                master_df.columns = master_df.columns.str.strip() # Xóa khoảng trắng thừa
+                master_df.columns = master_df.columns.str.strip()
                 
-                # --- SMART MAPPING ---
-                # Tự động tìm tên cột đúng trong file của user
+                # Smart Mapping
                 found_exercise = DataManager.smart_find_column(master_df, ['thực hiện', 'exercise', 'strike', 'giá th'])
                 found_ratio = DataManager.smart_find_column(master_df, ['tỷ lệ', 'ratio', 'conversion', 'cđ'])
                 found_code = DataManager.smart_find_column(master_df, ['mã cw', 'cw code', 'symbol'])
@@ -110,11 +107,10 @@ def main():
                 if found_code: col_code = found_code
                 if found_underlying: col_underlying = found_underlying
                 
-                # --- CLEAN DATA ---
+                # Clean Data
                 for col in [col_exercise, col_ratio]:
                     if col in master_df.columns:
-                        master_df[col] = master_df[col].astype(str).apply(lambda x: re.sub(r'[^\d.]', '', x))
-                        master_df[col] = pd.to_numeric(master_df[col], errors='coerce').fillna(0)
+                        master_df[col] = master_df[col].apply(DataManager.clean_number_value)
                 
                 st.success(f"✅ Đã map cột: {col_exercise} & {col_ratio}")
             except Exception as e:
@@ -124,17 +120,13 @@ def main():
             master_df = DataManager.get_default_master_data()
 
         st.divider()
-        
-        # --- USER INPUT ---
         if master_df.empty: st.stop()
 
-        # Dùng tên cột đã tìm thấy để lấy dữ liệu
         cw_list = master_df[col_code].unique()
         selected_cw = st.selectbox("Chọn Mã CW", cw_list)
         
         cw_info = master_df[master_df[col_code] == selected_cw].iloc[0]
         
-        # Lấy giá trị an toàn
         val_exercise = float(cw_info.get(col_exercise, 0))
         val_ratio = float(cw_info.get(col_ratio, 0))
         val_underlying_code = str(cw_info.get(col_underlying, "UNKNOWN"))
@@ -145,7 +137,6 @@ def main():
     # --- MAIN PROCESS ---
     current_real_price = DataManager.get_realtime_price(val_underlying_code)
     
-    # Snapshot
     if 'anchor_cw' not in st.session_state or st.session_state['anchor_cw'] != selected_cw:
         st.session_state['anchor_cw'] = selected_cw
         st.session_state['anchor_price'] = current_real_price
@@ -155,10 +146,9 @@ def main():
     engine = FinancialEngine()
 
     # --- TABS ---
-    tab1, tab2 = st.tabs(["📊 Dashboard", "🎲 Simulator (Giả lập)"])
+    tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "🎲 Simulator (Giả lập)", "📉 Biểu đồ BEP"])
 
     with tab1:
-        # Tính toán Dashboard
         bep = engine.calc_bep(val_exercise, cost_price, val_ratio)
         cw_price_theory = engine.calc_intrinsic_value(current_real_price, val_exercise, val_ratio)
         
@@ -170,22 +160,17 @@ def main():
     with tab2:
         st.subheader("Kiểm tra thông số đầu vào (Debug)")
         
-        # --- DEBUG SECTION: HIỂN THỊ RÕ THÔNG SỐ ĐANG DÙNG ---
-        if val_exercise == 0 or val_ratio == 0:
-            st.error(f"❌ LỖI DỮ LIỆU: Giá thực hiện = {val_exercise}, Tỷ lệ = {val_ratio}. Vui lòng kiểm tra file CSV.")
-        else:
-            st.markdown(f"""
-            <div class="debug-box">
-                <b>Đang tính toán với thông số:</b><br>
-                - Giá thực hiện (Exercise Price): <b>{val_exercise:,.0f} VND</b><br>
-                - Tỷ lệ chuyển đổi (Ratio): <b>{val_ratio} : 1</b><br>
-                - Công thức: Max((Giá Mục Tiêu - {val_exercise:,.0f}) / {val_ratio}, 0)
-            </div>
-            """, unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class="debug-box">
+            <b>Đang tính toán với thông số:</b><br>
+            - Giá thực hiện: <b>{val_exercise:,.0f} VND</b><br>
+            - Tỷ lệ chuyển đổi: <b>{val_ratio} : 1</b><br>
+            - Công thức: Max((Giá Mục Tiêu - {val_exercise:,.0f}) / {val_ratio}, 0)
+        </div>
+        """, unsafe_allow_html=True)
 
         st.divider()
         
-        # --- SIMULATOR ---
         target_price = st.slider(
             f"Giá mục tiêu {val_underlying_code}", 
             min_value=int(anchor_price * 0.5), 
@@ -194,7 +179,6 @@ def main():
             step=100
         )
         
-        # Tính toán giả lập
         sim_cw_price = engine.calc_intrinsic_value(target_price, val_exercise, val_ratio)
         sim_pnl = (sim_cw_price - cost_price) * qty
         sim_pnl_pct = (sim_pnl / (cost_price * qty) * 100) if cost_price > 0 else 0
@@ -205,6 +189,28 @@ def main():
         with c2:
             color = "green" if sim_pnl >= 0 else "red"
             st.markdown(f"Lãi/Lỗ dự kiến: :**{color}[{sim_pnl:,.0f} VND ({sim_pnl_pct:.2f}%)]**")
+
+    with tab3:
+        st.subheader("Phân tích Điểm Hòa Vốn Trực quan")
+        x_values = np.linspace(current_real_price * 0.8, current_real_price * 1.2, 50)
+        y_pnl = []
+        for x in x_values:
+            cw_val = engine.calc_intrinsic_value(x, val_exercise, val_ratio)
+            y_pnl.append((cw_val - cost_price) * qty)
+            
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=x_values, y=y_pnl, mode='lines', name='P/L Profile', line=dict(color='blue', width=3)))
+        fig.add_vline(x=bep, line_width=2, line_dash="dash", line_color="orange", annotation_text="Điểm Hòa Vốn")
+        fig.add_hline(y=0, line_width=1, line_color="gray")
+        fig.add_trace(go.Scatter(x=[current_real_price], y=[(engine.calc_intrinsic_value(current_real_price, val_exercise, val_ratio) - cost_price) * qty], mode='markers', name='Hiện tại', marker=dict(color='red', size=12)))
+        
+        fig.update_layout(
+            title=f"Biểu đồ P/L của {selected_cw} theo giá {val_underlying_code}",
+            xaxis_title=f"Giá Cổ phiếu {val_underlying_code}",
+            yaxis_title="Lãi/Lỗ (VND)",
+            template="plotly_white"
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
 if __name__ == "__main__":
     main()
