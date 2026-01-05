@@ -135,7 +135,7 @@ def process_image_with_gemini(image, api_key):
     try:
         genai.configure(api_key=api_key)
         # Sửa thành model user xác nhận chạy tốt
-        model_name = 'gemini-flash-latest' 
+        model_name = 'gemini-3-flash-preview' 
         
         model = genai.GenerativeModel(model_name)
         
