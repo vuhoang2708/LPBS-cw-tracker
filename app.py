@@ -3,19 +3,77 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import re
+from datetime import datetime, timedelta
 
 # ==========================================
-# 1. CONFIG & SYSTEM SETTINGS
+# 1. CONFIG & BRANDING (LPBS THEME)
 # ==========================================
-st.set_page_config(page_title="LPBank CW Tracker", layout="wide", page_icon="📈")
+st.set_page_config(page_title="LPBS CW Tracker", layout="wide", page_icon="🔶")
 
+# Tính giờ Việt Nam
+vn_time = datetime.utcnow() + timedelta(hours=7)
+build_time_str = vn_time.strftime("%H:%M:%S - %d/%m/%Y")
+
+# CSS TÙY BIẾN THEO MÀU THƯƠNG HIỆU LPBS (CAM - VÀNG - NÂU)
 st.markdown("""
 <style>
-    .metric-card {background-color: #f0f2f6; padding: 15px; border-radius: 10px; border-left: 5px solid #4CAF50;}
-    .stTabs [data-baseweb="tab-list"] { gap: 24px; }
-    .stTabs [data-baseweb="tab"] { height: 50px; white-space: pre-wrap; background-color: #f0f2f6; border-radius: 4px 4px 0px 0px; gap: 1px; padding-top: 10px; padding-bottom: 10px; }
-    .stTabs [aria-selected="true"] { background-color: #FFFFFF; border-bottom: 2px solid #4CAF50; }
-    .debug-box { background-color: #e3f2fd; color: #0d47a1; padding: 10px; border-radius: 5px; font-size: 0.9em; margin-bottom: 10px; border: 1px solid #90caf9; }
+    /* 1. Tổng thể */
+    .main { background-color: #FFFFFF; }
+    h1, h2, h3 { color: #5D4037 !important; } /* Màu Nâu đậm thương hiệu */
+    
+    /* 2. Sidebar (Màu kem sáng) */
+    [data-testid="stSidebar"] {
+        background-color: #FFF8E1; /* Light Cream */
+        border-right: 1px solid #FFECB3;
+    }
+    
+    /* 3. Metric Card (Thẻ chỉ số) */
+    .metric-card {
+        background: linear-gradient(to right, #FFF3E0, #FFFFFF);
+        padding: 15px; 
+        border-radius: 10px; 
+        border-left: 5px solid #FF8F00; /* Cam đậm LPBS */
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        color: #4E342E;
+    }
+    
+    /* 4. Tabs Styling */
+    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
+    .stTabs [data-baseweb="tab"] {
+        height: 50px; 
+        background-color: #FFF8E1; 
+        border-radius: 5px 5px 0px 0px; 
+        color: #5D4037;
+        font-weight: 600;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #FF8F00 !important; /* Màu Cam khi chọn */
+        color: white !important;
+    }
+
+    /* 5. Debug Box & Info Box */
+    .debug-box { 
+        background-color: #FFF3E0; 
+        color: #BF360C; 
+        padding: 15px; 
+        border-radius: 8px; 
+        border: 1px dashed #FF8F00; 
+    }
+    .guide-box {
+        background-color: #E8F5E9;
+        border-left: 4px solid #2E7D32;
+        padding: 15px;
+        border-radius: 5px;
+        margin-bottom: 20px;
+    }
+
+    /* 6. Custom Button & Slider colors (Hack nhẹ Streamlit) */
+    div.stSlider > div[data-baseweb = "slider"] > div > div > div[role="slider"]{
+        background-color: #FF8F00 !important;
+    }
+    div.stSlider > div[data-baseweb = "slider"] > div > div {
+        background-color: #FFECB3 !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -52,8 +110,8 @@ class DataManager:
     @staticmethod
     def clean_number_value(val):
         s = str(val)
-        if ':' in s: s = s.split(':')[0] # Xử lý 5:1 -> lấy 5
-        s = re.sub(r'[^\d.]', '', s)     # Xóa ký tự lạ
+        if ':' in s: s = s.split(':')[0]
+        s = re.sub(r'[^\d.]', '', s)
         try:
             return float(s)
         except:
@@ -76,10 +134,9 @@ class FinancialEngine:
 # 4. UI PRESENTATION
 # ==========================================
 def main():
-    st.title("📈 LPBank Invest - CW Tracker & Simulator")
-    
-    # --- HIỂN THỊ ĐÚNG YÊU CẦU ---
-    st.caption("System Architect: AI Guardian | Build: 15:30 05/01/2026")
+    # --- HEADER & CREDIT ---
+    st.title("🔶 LPBS CW Tracker & Simulator")
+    st.caption(f"Credit: VuHoang | Build: {build_time_str}")
 
     # --- SIDEBAR ---
     with st.sidebar:
@@ -96,7 +153,6 @@ def main():
                 master_df = pd.read_csv(uploaded_file)
                 master_df.columns = master_df.columns.str.strip()
                 
-                # Smart Mapping
                 found_exercise = DataManager.smart_find_column(master_df, ['thực hiện', 'exercise', 'strike', 'giá th'])
                 found_ratio = DataManager.smart_find_column(master_df, ['tỷ lệ', 'ratio', 'conversion', 'cđ'])
                 found_code = DataManager.smart_find_column(master_df, ['mã cw', 'cw code', 'symbol'])
@@ -107,7 +163,6 @@ def main():
                 if found_code: col_code = found_code
                 if found_underlying: col_underlying = found_underlying
                 
-                # Clean Data
                 for col in [col_exercise, col_ratio]:
                     if col in master_df.columns:
                         master_df[col] = master_df[col].apply(DataManager.clean_number_value)
@@ -146,20 +201,29 @@ def main():
     engine = FinancialEngine()
 
     # --- TABS ---
-    tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "🎲 Simulator (Giả lập)", "📉 Biểu đồ BEP"])
+    tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "🎲 Simulator (Giả lập)", "📉 Biểu đồ Hòa vốn"])
 
     with tab1:
         bep = engine.calc_bep(val_exercise, cost_price, val_ratio)
         cw_price_theory = engine.calc_intrinsic_value(current_real_price, val_exercise, val_ratio)
         
+        # Custom Metric Card HTML
+        def card(label, value, sub=""):
+            st.markdown(f"""
+            <div class="metric-card">
+                <div style="font-size:0.9em; color:#666;">{label}</div>
+                <div style="font-size:1.5em; font-weight:bold; color:#E65100;">{value}</div>
+                <div style="font-size:0.8em; color:#888;">{sub}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
         c1, c2, c3 = st.columns(3)
-        c1.metric(f"Giá {val_underlying_code}", f"{current_real_price:,.0f}")
-        c2.metric("Giá CW Lý thuyết", f"{cw_price_theory:,.0f}")
-        c3.metric("Điểm Hòa Vốn", f"{bep:,.0f}")
+        with c1: card(f"Giá {val_underlying_code}", f"{current_real_price:,.0f} ₫", "Thị trường (Real-time)")
+        with c2: card("Giá CW Lý thuyết", f"{cw_price_theory:,.0f} ₫", "Intrinsic Value")
+        with c3: card("Điểm Hòa Vốn (BEP)", f"{bep:,.0f} ₫", "Break-even Point")
 
     with tab2:
         st.subheader("Kiểm tra thông số đầu vào (Debug)")
-        
         st.markdown(f"""
         <div class="debug-box">
             <b>Đang tính toán với thông số:</b><br>
@@ -168,7 +232,6 @@ def main():
             - Công thức: Max((Giá Mục Tiêu - {val_exercise:,.0f}) / {val_ratio}, 0)
         </div>
         """, unsafe_allow_html=True)
-
         st.divider()
         
         target_price = st.slider(
@@ -184,14 +247,27 @@ def main():
         sim_pnl_pct = (sim_pnl / (cost_price * qty) * 100) if cost_price > 0 else 0
         
         c1, c2 = st.columns(2)
-        with c1:
-            st.info(f"Giá CW Lý thuyết: **{sim_cw_price:,.0f} VND**")
+        with c1: st.info(f"Giá CW Lý thuyết: **{sim_cw_price:,.0f} VND**")
         with c2:
-            color = "green" if sim_pnl >= 0 else "red"
-            st.markdown(f"Lãi/Lỗ dự kiến: :**{color}[{sim_pnl:,.0f} VND ({sim_pnl_pct:.2f}%)]**")
+            color = "#2E7D32" if sim_pnl >= 0 else "#C62828" # Xanh đậm / Đỏ đậm
+            st.markdown(f"Lãi/Lỗ dự kiến: :**<span style='color:{color}'>{sim_pnl:,.0f} VND ({sim_pnl_pct:.2f}%)</span>**", unsafe_allow_html=True)
 
     with tab3:
-        st.subheader("Phân tích Điểm Hòa Vốn Trực quan")
+        st.subheader("Phân tích Điểm Hòa Vốn (Break-even Analysis)")
+        
+        # --- HƯỚNG DẪN SỬ DỤNG (NEW) ---
+        st.markdown("""
+        <div class="guide-box">
+            <b>💡 Hướng dẫn đọc biểu đồ:</b>
+            <ul style="margin-top:5px; margin-bottom:0;">
+                <li><b>Đường màu xanh (P/L Profile):</b> Biểu diễn Lãi/Lỗ của bạn tương ứng với giá Cổ phiếu cơ sở.</li>
+                <li><b>Đường đứt đoạn màu cam (BEP):</b> Là mức giá Cổ phiếu cơ sở cần đạt để bạn hòa vốn.</li>
+                <li><b>Điểm màu đỏ:</b> Vị trí giá hiện tại. Nếu điểm đỏ nằm bên phải đường cam -> Bạn đang Lãi.</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
+        # -------------------------------
+
         x_values = np.linspace(current_real_price * 0.8, current_real_price * 1.2, 50)
         y_pnl = []
         for x in x_values:
@@ -199,16 +275,18 @@ def main():
             y_pnl.append((cw_val - cost_price) * qty)
             
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x=x_values, y=y_pnl, mode='lines', name='P/L Profile', line=dict(color='blue', width=3)))
-        fig.add_vline(x=bep, line_width=2, line_dash="dash", line_color="orange", annotation_text="Điểm Hòa Vốn")
+        # Đổi màu line chart sang màu Cam/Vàng thương hiệu
+        fig.add_trace(go.Scatter(x=x_values, y=y_pnl, mode='lines', name='Lợi nhuận dự kiến', line=dict(color='#FF8F00', width=3)))
+        fig.add_vline(x=bep, line_width=2, line_dash="dash", line_color="#5D4037", annotation_text="Hòa Vốn")
         fig.add_hline(y=0, line_width=1, line_color="gray")
-        fig.add_trace(go.Scatter(x=[current_real_price], y=[(engine.calc_intrinsic_value(current_real_price, val_exercise, val_ratio) - cost_price) * qty], mode='markers', name='Hiện tại', marker=dict(color='red', size=12)))
+        fig.add_trace(go.Scatter(x=[current_real_price], y=[(engine.calc_intrinsic_value(current_real_price, val_exercise, val_ratio) - cost_price) * qty], mode='markers', name='Hiện tại', marker=dict(color='#D32F2F', size=12)))
         
         fig.update_layout(
-            title=f"Biểu đồ P/L của {selected_cw} theo giá {val_underlying_code}",
+            title=f"Biểu đồ P/L: {selected_cw} vs {val_underlying_code}",
             xaxis_title=f"Giá Cổ phiếu {val_underlying_code}",
             yaxis_title="Lãi/Lỗ (VND)",
-            template="plotly_white"
+            template="plotly_white",
+            hovermode="x unified"
         )
         st.plotly_chart(fig, use_container_width=True)
 
