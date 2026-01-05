@@ -129,21 +129,12 @@ class FinancialEngine:
         return price_exercise + (price_cost * ratio)
 
 # ==========================================
-# 4. AI SERVICE LAYER (UPDATED V8.1)
+# 4. AI SERVICE LAYER (V8.3 - User Tuned)
 # ==========================================
 def process_image_with_gemini(image, api_key):
-    """
-    Gửi ảnh lên Gemini để trích xuất dữ liệu.
-    Cố gắng dùng model mới nhất.
-    """
     try:
         genai.configure(api_key=api_key)
-        
-        # --- CẤU HÌNH MODEL ---
-        # Ưu tiên Gemini 3 Flash nếu có, không thì về 1.5 Flash Latest
-        # Lưu ý: 'gemini-3-flash-preview' có thể cần waitlist.
-        # Để an toàn, tôi dùng 'gemini-1.5-flash-latest' (Bản ổn định nhất).
-        # Nếu muốn thử Gemini 3, hãy đổi thành: model_name = 'gemini-3-flash-preview'
+        # Sửa thành model user xác nhận chạy tốt
         model_name = 'gemini-flash-latest' 
         
         model = genai.GenerativeModel(model_name)
@@ -163,18 +154,16 @@ def process_image_with_gemini(image, api_key):
         
         response = model.generate_content([prompt, image])
         
-        # Xử lý chuỗi trả về để lấy JSON sạch
         text = response.text.strip()
         if text.startswith("```json"):
             text = text[7:-3]
         elif text.startswith("```"):
             text = text[3:-3]
             
-        return eval(text) # Chuyển string thành dict
+        return eval(text)
     except Exception as e:
-        # Bắt lỗi 404 để báo người dùng biết do model
         if "404" in str(e):
-            return {"error": f"Model {model_name} không tìm thấy. Hãy thử đổi sang 'gemini-1.5-flash' hoặc cập nhật thư viện."}
+            return {"error": f"Model {model_name} không tìm thấy. Vui lòng kiểm tra lại API Key."}
         return {"error": str(e)}
 
 # ==========================================
@@ -194,28 +183,25 @@ def render_metric_card(label, value, sub=""):
 # ==========================================
 def main():
     st.title("🔶 LPBS CW Tracker & Simulator")
-    st.caption(f"Credit: VuHoang | Build: {build_time_str} | Status: Stable V8.1 (Gemini Fix)")
+    st.caption(f"Credit: VuHoang | Build: {build_time_str} | Status: Stable V8.3 (Tuned)")
 
-    # Init Session State cho AI
     if 'ocr_result' not in st.session_state:
         st.session_state['ocr_result'] = None
 
     # --- SIDEBAR ---
     with st.sidebar:
-        # A. CẤU HÌNH AI (Quan trọng)
         with st.expander("🔑 Cấu hình AI (Bước 1)", expanded=True):
-            st.caption("Nhập Google AI Key để kích hoạt tính năng đọc ảnh.")
+            st.caption("Nhập Google AI Key:")
             api_key = st.text_input("API Key", type="password", placeholder="AIzaSy...")
-            st.markdown("[👉 Lấy Key miễn phí tại đây](https://aistudio.google.com/app/apikey)")
+            st.markdown("[👉 Lấy Key miễn phí](https://aistudio.google.com/app/apikey)")
 
-        # B. OCR SECTION
         st.header("📸 AI Quét Lệnh")
         st.markdown('<div class="ocr-box">', unsafe_allow_html=True)
         uploaded_img = st.file_uploader("Tải ảnh biên lai/SMS", type=["png", "jpg", "jpeg"])
         
         if uploaded_img:
             if not api_key:
-                st.warning("⚠️ Vui lòng nhập API Key ở trên trước!")
+                st.warning("⚠️ Cần nhập API Key trước!")
             else:
                 if st.button("🚀 Phân tích ngay"):
                     with st.spinner("Đang gửi lệnh lên Gemini AI..."):
@@ -228,17 +214,15 @@ def main():
                             else:
                                 st.session_state['ocr_result'] = result
                                 st.success("✅ Đã trích xuất xong!")
-                                st.json(result) # Hiển thị kết quả thô để check
+                                st.json(result)
                         except Exception as e:
                             st.error(f"Lỗi xử lý ảnh: {e}")
         
         st.markdown('</div>', unsafe_allow_html=True)
         st.divider()
 
-        # C. DATA & INPUT
         master_df = DataManager.get_default_master_data()
         
-        # Admin Import (Giấu gọn)
         with st.expander("⚙️ Admin: Upload CSV"):
             uploaded_csv = st.file_uploader("File danh sách mã", type=["csv"])
             if uploaded_csv:
@@ -249,23 +233,18 @@ def main():
                     st.success("Updated CSV!")
                 except: pass
 
-        # Clean Data
         if "Giá thực hiện" in master_df.columns:
             master_df["Giá thực hiện"] = master_df["Giá thực hiện"].apply(DataManager.clean_number_value)
             master_df["Tỷ lệ CĐ"] = master_df["Tỷ lệ CĐ"].apply(DataManager.clean_number_value)
 
-        # D. AUTO-FILL LOGIC (Điền form tự động từ kết quả AI)
         default_qty = 1000.0
         default_price = 1000.0
-        default_index = 0 # Mặc định chọn mã đầu tiên
+        default_index = 0
         
         if st.session_state['ocr_result']:
             res = st.session_state['ocr_result']
-            # 1. Fill Số lượng & Giá
             if res.get('qty'): default_qty = float(res['qty'])
             if res.get('price'): default_price = float(res['price'])
-            
-            # 2. Fill Mã (Tìm tương đối)
             detected_sym = str(res.get('symbol', '')).upper()
             if detected_sym:
                 mask = master_df['Mã CW'].str.contains(detected_sym) | master_df['Mã CS'].str.contains(detected_sym)
@@ -274,11 +253,8 @@ def main():
                     default_index = found_idx[0]
                     st.toast(f"🤖 AI đã chọn mã: {master_df.iloc[default_index]['Mã CW']}")
 
-        # E. MANUAL INPUT FORM
         st.header("🛠️ Nhập liệu")
         cw_list = master_df["Mã CW"].unique()
-        
-        # Selectbox có index động
         selected_cw = st.selectbox("Chọn Mã CW", cw_list, index=int(default_index))
         
         cw_info = master_df[master_df["Mã CW"] == selected_cw].iloc[0]
@@ -292,7 +268,6 @@ def main():
     # --- MAIN PROCESS ---
     current_real_price = DataManager.get_realtime_price(val_underlying_code)
     
-    # Snapshot State
     if 'anchor_cw' not in st.session_state or st.session_state['anchor_cw'] != selected_cw:
         st.session_state['anchor_cw'] = selected_cw
         st.session_state['anchor_price'] = current_real_price
@@ -303,11 +278,11 @@ def main():
 
     # --- TABS ---
     tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "🎲 Simulator (Giả lập)", "📉 Biểu đồ Hòa vốn"])
+    
+    bep = engine.calc_bep(val_exercise, cost_price, val_ratio)
+    cw_price_theory = engine.calc_intrinsic_value(current_real_price, val_exercise, val_ratio)
 
     with tab1:
-        bep = engine.calc_bep(val_exercise, cost_price, val_ratio)
-        cw_price_theory = engine.calc_intrinsic_value(current_real_price, val_exercise, val_ratio)
-        
         c1, c2, c3 = st.columns(3)
         with c1: render_metric_card(f"Giá {val_underlying_code}", f"{current_real_price:,.0f} ₫", "Thị trường")
         with c2: render_metric_card("Giá CW Lý thuyết", f"{cw_price_theory:,.0f} ₫", "Intrinsic Value")
@@ -323,10 +298,16 @@ def main():
         st.subheader("Giả lập Lợi nhuận")
         st.info(f"Giả định giá tương lai cho: {val_underlying_code} (Hiện tại: {anchor_price:,.0f})")
         
+        # --- FIX: LOGIC SLIDER THEO YÊU CẦU ---
+        # Slider Max = Max(150% giá hiện tại, 150% điểm hòa vốn)
+        # Đảm bảo kéo thoải mái qua điểm hòa vốn
+        slider_min = int(anchor_price * 0.5)
+        slider_max = int(max(anchor_price * 1.5, bep * 1.5)) 
+        
         target_price = st.slider(
-            "Kéo giá mục tiêu:", 
-            min_value=int(anchor_price*0.5), 
-            max_value=int(anchor_price*1.5), 
+            "Kéo giá mục tiêu (Max Range = 1.5x BEP):", 
+            min_value=slider_min, 
+            max_value=slider_max, 
             value=st.session_state['sim_target_price'], 
             step=100
         )
@@ -343,7 +324,8 @@ def main():
 
     with tab3:
         st.subheader("Biểu đồ P/L")
-        x_vals = np.linspace(current_real_price*0.8, current_real_price*1.2, 50)
+        plot_max = max(current_real_price * 1.2, bep * 1.2)
+        x_vals = np.linspace(current_real_price * 0.8, plot_max, 50)
         y_vals = [(engine.calc_intrinsic_value(x, val_exercise, val_ratio) - cost_price)*qty for x in x_vals]
         
         fig = go.Figure()
@@ -351,7 +333,6 @@ def main():
         fig.add_vline(x=bep, line_dash="dash", line_color="#5D4037", annotation_text="Hòa Vốn")
         fig.add_hline(y=0, line_color="gray")
         
-        # Điểm hiện tại
         curr_pnl = (cw_price_theory - cost_price) * qty
         fig.add_trace(go.Scatter(x=[current_real_price], y=[curr_pnl], mode='markers', name='Hiện tại', marker=dict(color='red', size=12)))
         
