@@ -2,14 +2,12 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-import time
 
 # ==========================================
 # 1. CONFIG & SYSTEM SETTINGS
 # ==========================================
 st.set_page_config(page_title="LPBank CW Tracker", layout="wide", page_icon="📈")
 
-# CSS Tùy chỉnh
 st.markdown("""
 <style>
     .metric-card {background-color: #f0f2f6; padding: 15px; border-radius: 10px; border-left: 5px solid #4CAF50;}
@@ -20,7 +18,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. DATA LAYER (MOCKUP REAL-TIME)
+# 2. DATA LAYER
 # ==========================================
 class DataManager:
     @staticmethod
@@ -33,20 +31,16 @@ class DataManager:
 
     @staticmethod
     def get_realtime_price(symbol):
-        """
-        Giả lập API lấy giá thị trường (Có biến động nhẹ để tạo cảm giác Real-time)
-        Trong thực tế: Thay bằng vnstock hoặc API VNDirect.
-        """
+        # Giả lập giá có biến động nhẹ
         base_prices = {
-            "HPG": 28500, "MWG": 48200, "VHM": 41800, # Giá cơ sở
-            "CHPG2301": 4300, "CVHM2302": 550         # Giá CW
+            "HPG": 28500, "MWG": 48200, "VHM": 41800,
+            "CHPG2301": 4300, "CVHM2302": 550
         }
-        # Tạo biến động ngẫu nhiên +/- 1%
         noise = np.random.uniform(0.99, 1.01)
         return base_prices.get(symbol, 0) * noise
 
 # ==========================================
-# 3. LOGIC LAYER (FINANCIAL CORE)
+# 3. LOGIC LAYER
 # ==========================================
 class FinancialEngine:
     @staticmethod
@@ -62,7 +56,7 @@ class FinancialEngine:
 # ==========================================
 def main():
     st.title("📈 LPBank Invest - CW Tracker & Simulator")
-    st.caption("System Architect: AI Guardian | Version: 3.0 (Cloud Native)")
+    st.caption("System Architect: AI Guardian | Version: 3.1 (Stable Slider)")
 
     # --- SIDEBAR ---
     with st.sidebar:
@@ -76,40 +70,40 @@ def main():
         
         st.info(f"ℹ️ **Thông tin {selected_cw}**\n\n- Mã CS: {cw_info['Mã CS']}\n- Giá TH: {cw_info['Giá thực hiện']:,}\n- Tỷ lệ: {cw_info['Tỷ lệ CĐ']}:1")
 
-    # --- MAIN DATA PROCESSING ---
-    # Lấy giá Real-time
+    # --- DATA PROCESSING ---
     price_underlying = DataManager.get_realtime_price(cw_info["Mã CS"])
     
-    # Tính toán Core
+    # --- FIX: SESSION STATE FOR SLIDER ---
+    # Logic: Chỉ reset thanh trượt về giá thị trường khi người dùng đổi Mã CW
+    if "last_cw" not in st.session_state or st.session_state["last_cw"] != selected_cw:
+        st.session_state["last_cw"] = selected_cw
+        st.session_state["sim_slider_val"] = int(price_underlying) # Reset slider về giá hiện tại
+
+    # --- CORE CALCULATION ---
     engine = FinancialEngine()
     bep = engine.calc_bep(cw_info["Giá thực hiện"], cost_price, cw_info["Tỷ lệ CĐ"])
     
-    # Xác định giá CW hiện tại
     if cw_info['Trạng thái'] == 'Pre-listing':
         current_cw_price = engine.calc_intrinsic_value(price_underlying, cw_info["Giá thực hiện"], cw_info["Tỷ lệ CĐ"])
         note = "⚠️ Giá trị nội tại (Pre-listing)"
     else:
-        # Lấy giá thị trường giả lập
         market_cw_price = DataManager.get_realtime_price(selected_cw)
-        # Nếu không lấy được giá thị trường (do mã giả), dùng giá lý thuyết
         current_cw_price = market_cw_price if market_cw_price > 0 else engine.calc_intrinsic_value(price_underlying, cw_info["Giá thực hiện"], cw_info["Tỷ lệ CĐ"])
         note = "✅ Giá thị trường (Listed)"
 
     pnl = (current_cw_price - cost_price) * qty
     pnl_pct = (pnl / (cost_price * qty) * 100) if cost_price > 0 else 0
 
-    # --- TABS INTERFACE ---
+    # --- TABS ---
     tab1, tab2, tab3 = st.tabs(["📊 Dashboard P/L", "🎲 Simulator (Giả lập)", "📉 Biểu đồ BEP"])
 
     with tab1:
-        # KPI Cards
         col1, col2, col3, col4 = st.columns(4)
         col1.metric(f"Giá {cw_info['Mã CS']}", f"{price_underlying:,.0f} ₫")
         col2.metric("Giá CW Hiện tại", f"{current_cw_price:,.0f} ₫", delta=note, delta_color="off")
         col3.metric("Điểm Hòa Vốn (BEP)", f"{bep:,.0f} ₫")
         col4.metric("Lãi/Lỗ (P/L)", f"{pnl:,.0f} ₫", f"{pnl_pct:.2f}%")
 
-        # Status Alert
         if price_underlying < bep:
             diff = ((bep - price_underlying) / price_underlying) * 100
             st.warning(f"📉 Cần **{cw_info['Mã CS']}** tăng thêm **{diff:.2f}%** (lên mức {bep:,.0f}) để về bờ.")
@@ -120,16 +114,15 @@ def main():
         st.subheader("Giả lập Lợi nhuận theo Kỳ vọng")
         st.write("Kéo thanh trượt để thay đổi giá Cổ phiếu cơ sở tương lai:")
         
-        # Slider Input
+        # SLIDER ĐÃ FIX: Dùng key="sim_slider_val" để liên kết với Session State
         target_price = st.slider(
             f"Giá mục tiêu {cw_info['Mã CS']}", 
             min_value=int(price_underlying * 0.8), 
             max_value=int(price_underlying * 1.5), 
-            value=int(price_underlying),
+            key="sim_slider_val", # Quan trọng: Key này giúp Streamlit nhớ vị trí
             step=100
         )
         
-        # Sim Calculation
         sim_cw_price = engine.calc_intrinsic_value(target_price, cw_info["Giá thực hiện"], cw_info["Tỷ lệ CĐ"])
         sim_pnl = (sim_cw_price - cost_price) * qty
         sim_pnl_pct = (sim_pnl / (cost_price * qty) * 100) if cost_price > 0 else 0
@@ -143,23 +136,16 @@ def main():
 
     with tab3:
         st.subheader("Phân tích Điểm Hòa Vốn Trực quan")
-        
-        # Generate Data for Chart
         x_values = np.linspace(price_underlying * 0.8, price_underlying * 1.2, 50)
         y_pnl = []
         for x in x_values:
             cw_val = engine.calc_intrinsic_value(x, cw_info["Giá thực hiện"], cw_info["Tỷ lệ CĐ"])
             y_pnl.append((cw_val - cost_price) * qty)
             
-        # Plotly Chart
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=x_values, y=y_pnl, mode='lines', name='P/L Profile', line=dict(color='blue', width=3)))
-        
-        # Add BEP Line
         fig.add_vline(x=bep, line_width=2, line_dash="dash", line_color="orange", annotation_text="Điểm Hòa Vốn")
         fig.add_hline(y=0, line_width=1, line_color="gray")
-        
-        # Current Price Marker
         fig.add_trace(go.Scatter(x=[price_underlying], y=[pnl], mode='markers', name='Hiện tại', marker=dict(color='red', size=12)))
         
         fig.update_layout(
