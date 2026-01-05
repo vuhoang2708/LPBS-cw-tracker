@@ -13,8 +13,7 @@ from PIL import Image
 # ==========================================
 st.set_page_config(page_title="LPBS CW Tracker", layout="wide", page_icon="🔶")
 
-# UPDATE: Giờ chuẩn hệ thống lúc tôi đang viết dòng này
-build_time_str = "17:55:00 - 05/01/2026" 
+build_time_str = "18:10:00 - 05/01/2026" 
 
 st.markdown("""
 <style>
@@ -80,6 +79,7 @@ st.markdown("""
 class DataManager:
     @staticmethod
     def get_default_master_data():
+        """Dữ liệu lõi 13 mã CW mới nhất của LPBS"""
         data = [
             {"Mã CW": "CMWG2519", "Mã CS": "MWG", "Tỷ lệ CĐ": "5:1", "Giá thực hiện": 88000, "Ngày đáo hạn": "2026-06-29", "Trạng thái": "Pre-listing"},
             {"Mã CW": "CWVHM2522", "Mã CS": "VHM", "Tỷ lệ CĐ": "10:1", "Giá thực hiện": 106000, "Ngày đáo hạn": "2026-12-28", "Trạng thái": "Pre-listing"},
@@ -148,30 +148,41 @@ class FinancialEngine:
             return "ATM (Ngang giá)", "orange"
 
 # ==========================================
-# 4. AI SERVICE LAYER (V8.9)
+# 4. AI SERVICE LAYER (V9.0 - PRECISION MODE)
 # ==========================================
 def process_image_with_gemini(image, api_key):
     try:
         genai.configure(api_key=api_key)
         model_name = 'gemini-3-flash-preview' 
+        
+        # Cấu hình khóa độ sáng tạo = 0 để kết quả luôn nhất quán
+        generation_config = genai.types.GenerationConfig(
+            temperature=0.0 
+        )
+        
         model = genai.GenerativeModel(model_name)
         
         prompt = """
         Bạn là một trợ lý nhập liệu tài chính (OCR). Nhiệm vụ:
-        1. Nhìn vào ảnh biên lai chuyển tiền hoặc màn hình đặt lệnh chứng khoán.
-        2. Tìm Mã chứng khoán (ví dụ: MWG, HPG, VHM...).
-        3. Tìm Số lượng (Quantity/Khối lượng).
-        4. Tìm Giá khớp/Giá vốn (Price).
+        1. Nhìn vào ảnh biên lai hoặc màn hình đặt lệnh.
+        2. Tìm chính xác Mã chứng khoán (ví dụ: MWG, HPG, VHM...). Ưu tiên mã có chữ to nhất hoặc nằm ở dòng tiêu đề.
+        3. Tìm Số lượng (Quantity/Khối lượng) và Giá vốn (Price).
         
-        Trả về kết quả CHỈ LÀ JSON thuần túy, không có markdown, theo định dạng:
+        Trả về kết quả CHỈ LÀ JSON thuần túy:
         {"symbol": "XXX", "qty": 1000, "price": 50000}
         
-        Nếu không tìm thấy trường nào thì trả về null.
+        Nếu không tìm thấy thì trả về null.
         """
-        response = model.generate_content([prompt, image])
+        
+        response = model.generate_content(
+            [prompt, image], 
+            generation_config=generation_config # Áp dụng cấu hình ổn định
+        )
+        
         text = response.text.strip()
         if text.startswith("```json"): text = text[7:-3]
         elif text.startswith("```"): text = text[3:-3]
+        
         return json.loads(text) 
     except Exception as e:
         return {"error": str(e)}
@@ -209,7 +220,7 @@ def render_cw_profile(cw_code, und_code, exercise_price, ratio, maturity_date, d
 # ==========================================
 def main():
     st.title("🔶 LPBS CW Tracker & Simulator")
-    st.caption(f"System: V8.9 | Build: {build_time_str} | Gemini 3.0 Ready")
+    st.caption(f"System: V9.0 | Build: {build_time_str} | Gemini Precision Mode")
 
     if 'ocr_result' not in st.session_state:
         st.session_state['ocr_result'] = None
@@ -223,14 +234,24 @@ def main():
         st.header("📸 AI Quét Lệnh")
         uploaded_img = st.file_uploader("Tải ảnh biên lai/SMS", type=["png", "jpg", "jpeg"])
         
-        if uploaded_img and api_key and st.button("🚀 Phân tích ngay"):
-            with st.spinner("Đang xử lý..."):
-                image = Image.open(uploaded_img)
-                result = process_image_with_gemini(image, api_key)
-                if "error" in result: st.error(result['error'])
-                else: 
-                    st.session_state['ocr_result'] = result
-                    st.success("Xong!")
+        if uploaded_img and api_key:
+            if st.button("🚀 Phân tích ngay"):
+                with st.spinner("Gemini đang đọc kỹ ảnh..."):
+                    image = Image.open(uploaded_img)
+                    # Gọi AI với chế độ Temperature = 0
+                    result = process_image_with_gemini(image, api_key)
+                    
+                    if "error" in result: 
+                        st.error(result['error'])
+                    else: 
+                        st.session_state['ocr_result'] = result
+                        st.success("Đã trích xuất xong!")
+            
+            # --- HIỂN THỊ BẰNG CHỨNG (DEBUG) ---
+            if st.session_state['ocr_result']:
+                with st.expander("👁️ Xem AI nhìn thấy gì (Debug)", expanded=False):
+                    st.json(st.session_state['ocr_result'])
+                    st.caption("Đây là dữ liệu thô AI đọc được từ ảnh của bạn.")
         
         st.divider()
         master_df = DataManager.get_default_master_data()
@@ -240,17 +261,26 @@ def main():
             master_df["Giá thực hiện"] = master_df["Giá thực hiện"].apply(DataManager.clean_number_value)
             master_df["Tỷ lệ CĐ"] = master_df["Tỷ lệ CĐ"].apply(DataManager.clean_number_value)
 
-        # Auto-Fill
+        # Auto-Fill Logic
         default_qty, default_price, default_index = 1000.0, 1000.0, 0
         if st.session_state['ocr_result']:
             res = st.session_state['ocr_result']
             if res.get('qty'): default_qty = float(res['qty'])
             if res.get('price'): default_price = float(res['price'])
-            det_sym = str(res.get('symbol', '')).upper()
+            
+            # Logic tìm mã thông minh hơn
+            det_sym = str(res.get('symbol', '')).upper().strip()
             if det_sym:
-                mask = master_df['Mã CW'].str.contains(det_sym) | master_df['Mã CS'].str.contains(det_sym)
-                found = master_df.index[mask].tolist()
-                if found: default_index = found[0]
+                # Tìm chính xác trước
+                mask_exact = master_df['Mã CW'] == det_sym
+                if mask_exact.any():
+                    found = master_df.index[mask_exact].tolist()
+                    default_index = found[0]
+                else:
+                    # Tìm tương đối
+                    mask = master_df['Mã CW'].str.contains(det_sym) | master_df['Mã CS'].str.contains(det_sym)
+                    found = master_df.index[mask].tolist()
+                    if found: default_index = found[0]
 
         st.header("🛠️ Nhập liệu")
         cw_list = master_df["Mã CW"].unique()
@@ -266,11 +296,9 @@ def main():
         cost_price = st.number_input("Giá vốn (VND)", value=default_price, step=50.0)
 
     # --- MAIN DISPLAY ---
-    # 1. Profile CW
     days_left = DataManager.calc_days_to_maturity(val_maturity_date)
     render_cw_profile(selected_cw, val_underlying_code, val_exercise, val_ratio, val_maturity_date, days_left)
     
-    # 2. Logic Calc
     current_real_price = DataManager.get_realtime_price(val_underlying_code)
     engine = FinancialEngine()
     bep = engine.calc_bep(val_exercise, cost_price, val_ratio)
