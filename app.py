@@ -231,4 +231,64 @@ def main():
         st.markdown(f"""
         <div class="debug-box">
             <b>Đang tính toán với thông số:</b><br>
-            - Giá thực hiện: <b>{val_exercis
+            - Giá thực hiện: <b>{val_exercise:,.0f} VND</b><br>
+            - Tỷ lệ chuyển đổi: <b>{val_ratio} : 1</b><br>
+            - Công thức: Max((Giá Mục Tiêu - {val_exercise:,.0f}) / {val_ratio}, 0)
+        </div>
+        """, unsafe_allow_html=True)
+        st.divider()
+        
+        target_price = st.slider(
+            f"Giá mục tiêu {val_underlying_code}", 
+            min_value=int(anchor_price * 0.5), 
+            max_value=int(anchor_price * 2.0), 
+            key="sim_target_price",
+            step=100
+        )
+        
+        sim_cw_price = engine.calc_intrinsic_value(target_price, val_exercise, val_ratio)
+        sim_pnl = (sim_cw_price - cost_price) * qty
+        sim_pnl_pct = (sim_pnl / (cost_price * qty) * 100) if cost_price > 0 else 0
+        
+        c1, c2 = st.columns(2)
+        with c1: st.info(f"Giá CW Lý thuyết: **{sim_cw_price:,.0f} VND**")
+        with c2:
+            color = "#2E7D32" if sim_pnl >= 0 else "#C62828"
+            st.markdown(f"Lãi/Lỗ dự kiến: :**<span style='color:{color}'>{sim_pnl:,.0f} VND ({sim_pnl_pct:.2f}%)</span>**", unsafe_allow_html=True)
+
+    with tab3:
+        st.subheader("Phân tích Điểm Hòa Vốn (Break-even Analysis)")
+        st.markdown("""
+        <div class="guide-box">
+            <b>💡 Hướng dẫn đọc biểu đồ:</b>
+            <ul style="margin-top:5px; margin-bottom:0;">
+                <li><b>Đường màu xanh (P/L Profile):</b> Biểu diễn Lãi/Lỗ của bạn tương ứng với giá Cổ phiếu cơ sở.</li>
+                <li><b>Đường đứt đoạn màu cam (BEP):</b> Là mức giá Cổ phiếu cơ sở cần đạt để bạn hòa vốn.</li>
+                <li><b>Điểm màu đỏ:</b> Vị trí giá hiện tại. Nếu điểm đỏ nằm bên phải đường cam -> Bạn đang Lãi.</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
+
+        x_values = np.linspace(current_real_price * 0.8, current_real_price * 1.2, 50)
+        y_pnl = []
+        for x in x_values:
+            cw_val = engine.calc_intrinsic_value(x, val_exercise, val_ratio)
+            y_pnl.append((cw_val - cost_price) * qty)
+            
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=x_values, y=y_pnl, mode='lines', name='Lợi nhuận dự kiến', line=dict(color='#FF8F00', width=3)))
+        fig.add_vline(x=bep, line_width=2, line_dash="dash", line_color="#5D4037", annotation_text="Hòa Vốn")
+        fig.add_hline(y=0, line_width=1, line_color="gray")
+        fig.add_trace(go.Scatter(x=[current_real_price], y=[(engine.calc_intrinsic_value(current_real_price, val_exercise, val_ratio) - cost_price) * qty], mode='markers', name='Hiện tại', marker=dict(color='#D32F2F', size=12)))
+        
+        fig.update_layout(
+            title=f"Biểu đồ P/L: {selected_cw} vs {val_underlying_code}",
+            xaxis_title=f"Giá Cổ phiếu {val_underlying_code}",
+            yaxis_title="Lãi/Lỗ (VND)",
+            template="plotly_white",
+            hovermode="x unified"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+if __name__ == "__main__":
+    main()
