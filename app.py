@@ -13,9 +13,8 @@ from PIL import Image
 # ==========================================
 st.set_page_config(page_title="LPBS CW Tracker", layout="wide", page_icon="🔶")
 
-# --- THAY ĐỔI: CHỐT CỨNG THỜI GIAN BUILD ---
-# Thay vì tính toán động, giờ ta ghi chết mốc thời gian tạo code
-build_time_str = "17:40:00 - 05/01/2026" 
+# Thời gian Build theo ngữ cảnh 2026
+build_time_str = "18:00:00 - 05/01/2026" 
 
 # CSS TÙY BIẾN
 st.markdown("""
@@ -130,12 +129,14 @@ class FinancialEngine:
         return price_exercise + (price_cost * ratio)
 
 # ==========================================
-# 4. AI SERVICE LAYER (V8.4 - JSON FIX)
+# 4. AI SERVICE LAYER (V8.7 - Gemini 3.0 Flash Preview)
 # ==========================================
 def process_image_with_gemini(image, api_key):
     try:
         genai.configure(api_key=api_key)
-        model_name = 'gemini-3-flash-preview'
+        
+        # --- CẬP NHẬT MODEL MỚI NHẤT (THEO YÊU CẦU 2026) ---
+        model_name = 'gemini-3-flash-preview' 
         model = genai.GenerativeModel(model_name)
         
         prompt = """
@@ -162,8 +163,7 @@ def process_image_with_gemini(image, api_key):
         return json.loads(text) 
         
     except Exception as e:
-        if "404" in str(e):
-            return {"error": f"Model {model_name} không tìm thấy. Vui lòng kiểm tra lại API Key."}
+        # Xử lý lỗi nếu server chưa sẵn sàng cho Gemini 3
         return {"error": str(e)}
 
 # ==========================================
@@ -183,7 +183,7 @@ def render_metric_card(label, value, sub=""):
 # ==========================================
 def main():
     st.title("🔶 LPBS CW Tracker & Simulator")
-    st.caption(f"Credit: VuHoang | Build: {build_time_str} | Status: Stable V8.5 (Final Static)")
+    st.caption(f"Credit: VuHoang | Build: {build_time_str} | Status: Stable V8.7 (Gemini 3.0)")
 
     if 'ocr_result' not in st.session_state:
         st.session_state['ocr_result'] = None
@@ -204,7 +204,7 @@ def main():
                 st.warning("⚠️ Cần nhập API Key trước!")
             else:
                 if st.button("🚀 Phân tích ngay"):
-                    with st.spinner("Đang gửi lệnh lên Gemini AI..."):
+                    with st.spinner(f"Gemini 3.0 Flash đang xử lý..."):
                         try:
                             image = Image.open(uploaded_img)
                             result = process_image_with_gemini(image, api_key)
@@ -336,4 +336,5 @@ def main():
         fig.update_layout(template="plotly_white", yaxis_title="Lãi/Lỗ (VND)")
         st.plotly_chart(fig, use_container_width=True)
 
-if __name__
+if __name__ == "__main__":
+    main()
