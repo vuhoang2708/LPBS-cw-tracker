@@ -32,6 +32,7 @@ st.markdown("""
         border-left: 5px solid #FF8F00;
         box-shadow: 0 2px 4px rgba(0,0,0,0.05);
         color: #4E342E;
+        margin-bottom: 10px;
     }
     
     .stTabs [data-baseweb="tab-list"] { gap: 10px; }
@@ -62,7 +63,6 @@ st.markdown("""
         margin-bottom: 20px;
     }
     
-    /* Style cho khu vực upload ảnh */
     .ocr-box {
         border: 2px dashed #FF8F00;
         padding: 10px;
@@ -80,7 +80,7 @@ st.markdown("""
 class DataManager:
     @staticmethod
     def get_default_master_data():
-        """Dữ liệu mặc định mới nhất (Hardcoded từ file lpbs cw.csv)"""
+        """Dữ liệu mặc định mới nhất (Hardcoded)"""
         data = [
             {"Mã CW": "CMWG2519", "Mã CS": "MWG", "Tỷ lệ CĐ": "5:1", "Giá thực hiện": 88000, "Ngày đáo hạn": "2026-06-29", "Trạng thái": "Pre-listing"},
             {"Mã CW": "CWVHM2522", "Mã CS": "VHM", "Tỷ lệ CĐ": "10:1", "Giá thực hiện": 106000, "Ngày đáo hạn": "2026-12-28", "Trạng thái": "Pre-listing"},
@@ -109,15 +109,6 @@ class DataManager:
         return base_prices.get(symbol, 20000) * noise
 
     @staticmethod
-    def smart_find_column(df, keywords):
-        for col in df.columns:
-            col_lower = col.lower()
-            for kw in keywords:
-                if kw in col_lower:
-                    return col
-        return None
-
-    @staticmethod
     def clean_number_value(val):
         s = str(val)
         if ':' in s: s = s.split(':')[0]
@@ -141,7 +132,19 @@ class FinancialEngine:
         return price_exercise + (price_cost * ratio)
 
 # ==========================================
-# 4. UI PRESENTATION
+# 4. UI HELPER (Tách hàm hiển thị ra ngoài)
+# ==========================================
+def render_metric_card(label, value, sub=""):
+    st.markdown(f"""
+    <div class="metric-card">
+        <div style="font-size:0.9em; color:#666;">{label}</div>
+        <div style="font-size:1.5em; font-weight:bold; color:#E65100;">{value}</div>
+        <div style="font-size:0.8em; color:#888;">{sub}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+# ==========================================
+# 5. MAIN APP
 # ==========================================
 def main():
     st.title("🔶 LPBS CW Tracker & Simulator")
@@ -149,57 +152,49 @@ def main():
 
     # --- SIDEBAR ---
     with st.sidebar:
-        # 1. OCR SECTION (TOP PRIORITY)
+        # 1. OCR SECTION
         st.header("📸 Quét Biên lai / Lệnh đặt")
         st.markdown('<div class="ocr-box">', unsafe_allow_html=True)
         uploaded_img = st.file_uploader("Tải ảnh biên lai/SMS (Beta)", type=["png", "jpg", "jpeg"])
         if uploaded_img:
-            st.info("Đã nhận ảnh. Hệ thống đang trích xuất dữ liệu... (Giả lập: Vui lòng kiểm tra lại thông tin bên dưới)")
+            st.info("Đã nhận ảnh. Hệ thống đang xử lý...")
         st.markdown('</div>', unsafe_allow_html=True)
 
         st.divider()
 
-        # 2. DATA LOADING (DEFAULT OR CSV)
-        # Mặc định load dữ liệu cứng
+        # 2. DATA LOADING
         master_df = DataManager.get_default_master_data()
         
-        # Logic Import CSV (Ẩn trong Expander)
+        # Import CSV (Ẩn)
         with st.expander("⚙️ Cập nhật Dữ liệu gốc (Admin)"):
             uploaded_csv = st.file_uploader("Upload file CSV mới", type=["csv"])
             if uploaded_csv is not None:
                 try:
                     temp_df = pd.read_csv(uploaded_csv)
                     temp_df.columns = temp_df.columns.str.strip()
-                    # Smart Mapping logic (giữ nguyên để phòng hờ)
-                    # ... (Logic mapping cũ) ...
-                    master_df = temp_df # Ghi đè nếu upload thành công
-                    st.success(f"Đã cập nhật {len(master_df)} mã từ file.")
+                    master_df = temp_df
+                    st.success(f"Đã cập nhật {len(master_df)} mã.")
                 except:
-                    st.error("Lỗi file CSV. Dùng dữ liệu mặc định.")
+                    st.error("Lỗi file CSV.")
 
-        # Clean Data (Áp dụng cho cả Default và CSV)
-        col_exercise = "Giá thực hiện"
-        col_ratio = "Tỷ lệ CĐ"
-        col_code = "Mã CW"
-        col_underlying = "Mã CS"
-        
-        # Map lại cột nếu dùng Default Data (vì tên cột đã chuẩn)
+        # Clean Data
         if "Giá thực hiện" in master_df.columns:
             master_df["Giá thực hiện"] = master_df["Giá thực hiện"].apply(DataManager.clean_number_value)
             master_df["Tỷ lệ CĐ"] = master_df["Tỷ lệ CĐ"].apply(DataManager.clean_number_value)
 
-        # 3. MANUAL INPUT (MIDDLE)
+        # 3. MANUAL INPUT
         st.header("🛠️ Nhập liệu Danh mục")
         if master_df.empty: st.stop()
 
-        cw_list = master_df[col_code].unique()
+        cw_list = master_df["Mã CW"].unique()
         selected_cw = st.selectbox("Chọn Mã CW", cw_list)
         
-        cw_info = master_df[master_df[col_code] == selected_cw].iloc[0]
+        cw_info = master_df[master_df["Mã CW"] == selected_cw].iloc[0]
         
-        val_exercise = float(cw_info.get(col_exercise, 0))
-        val_ratio = float(cw_info.get(col_ratio, 0))
-        val_underlying_code = str(cw_info.get(col_underlying, "UNKNOWN"))
+        # Lấy thông tin an toàn
+        val_exercise = float(cw_info.get("Giá thực hiện", 0))
+        val_ratio = float(cw_info.get("Tỷ lệ CĐ", 0))
+        val_underlying_code = str(cw_info.get("Mã CS", "UNKNOWN"))
         
         qty = st.number_input("Số lượng", value=1000, step=100)
         cost_price = st.number_input("Giá vốn (VND)", value=1000, step=50)
@@ -222,15 +217,18 @@ def main():
         bep = engine.calc_bep(val_exercise, cost_price, val_ratio)
         cw_price_theory = engine.calc_intrinsic_value(current_real_price, val_exercise, val_ratio)
         
-        def card(label, value, sub=""):
-            st.markdown(f"""
-            <div class="metric-card">
-                <div style="font-size:0.9em; color:#666;">{label}</div>
-                <div style="font-size:1.5em; font-weight:bold; color:#E65100;">{value}</div>
-                <div style="font-size:0.8em; color:#888;">{sub}</div>
-            </div>
-            """, unsafe_allow_html=True)
-
+        # Hiển thị thẻ (Dùng hàm render_metric_card đã tách ra ngoài)
         c1, c2, c3 = st.columns(3)
-        with c1: card(f"Giá {val_underlying_code}", f"{current_real_price:,.0f} ₫", "Thị trường (Real-time)")
-        with c2: card("Giá CW Lý thuyết", f"{cw_
+        with c1: 
+            render_metric_card(f"Giá {val_underlying_code}", f"{current_real_price:,.0f} ₫", "Thị trường (Real-time)")
+        with c2: 
+            render_metric_card("Giá CW Lý thuyết", f"{cw_price_theory:,.0f} ₫", "Intrinsic Value")
+        with c3: 
+            render_metric_card("Điểm Hòa Vốn (BEP)", f"{bep:,.0f} ₫", "Break-even Point")
+
+    with tab2:
+        st.subheader("Kiểm tra thông số đầu vào (Debug)")
+        st.markdown(f"""
+        <div class="debug-box">
+            <b>Đang tính toán với thông số:</b><br>
+            - Giá thực hiện: <b>{val_exercis
