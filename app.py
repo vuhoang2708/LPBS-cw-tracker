@@ -172,3 +172,65 @@ def main():
                     temp_df.columns = temp_df.columns.str.strip()
                     # Smart Mapping logic (giữ nguyên để phòng hờ)
                     # ... (Logic mapping cũ) ...
+                    master_df = temp_df # Ghi đè nếu upload thành công
+                    st.success(f"Đã cập nhật {len(master_df)} mã từ file.")
+                except:
+                    st.error("Lỗi file CSV. Dùng dữ liệu mặc định.")
+
+        # Clean Data (Áp dụng cho cả Default và CSV)
+        col_exercise = "Giá thực hiện"
+        col_ratio = "Tỷ lệ CĐ"
+        col_code = "Mã CW"
+        col_underlying = "Mã CS"
+        
+        # Map lại cột nếu dùng Default Data (vì tên cột đã chuẩn)
+        if "Giá thực hiện" in master_df.columns:
+            master_df["Giá thực hiện"] = master_df["Giá thực hiện"].apply(DataManager.clean_number_value)
+            master_df["Tỷ lệ CĐ"] = master_df["Tỷ lệ CĐ"].apply(DataManager.clean_number_value)
+
+        # 3. MANUAL INPUT (MIDDLE)
+        st.header("🛠️ Nhập liệu Danh mục")
+        if master_df.empty: st.stop()
+
+        cw_list = master_df[col_code].unique()
+        selected_cw = st.selectbox("Chọn Mã CW", cw_list)
+        
+        cw_info = master_df[master_df[col_code] == selected_cw].iloc[0]
+        
+        val_exercise = float(cw_info.get(col_exercise, 0))
+        val_ratio = float(cw_info.get(col_ratio, 0))
+        val_underlying_code = str(cw_info.get(col_underlying, "UNKNOWN"))
+        
+        qty = st.number_input("Số lượng", value=1000, step=100)
+        cost_price = st.number_input("Giá vốn (VND)", value=1000, step=50)
+
+    # --- MAIN PROCESS ---
+    current_real_price = DataManager.get_realtime_price(val_underlying_code)
+    
+    if 'anchor_cw' not in st.session_state or st.session_state['anchor_cw'] != selected_cw:
+        st.session_state['anchor_cw'] = selected_cw
+        st.session_state['anchor_price'] = current_real_price
+        st.session_state['sim_target_price'] = int(current_real_price)
+
+    anchor_price = st.session_state['anchor_price']
+    engine = FinancialEngine()
+
+    # --- TABS ---
+    tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "🎲 Simulator (Giả lập)", "📉 Biểu đồ Hòa vốn"])
+
+    with tab1:
+        bep = engine.calc_bep(val_exercise, cost_price, val_ratio)
+        cw_price_theory = engine.calc_intrinsic_value(current_real_price, val_exercise, val_ratio)
+        
+        def card(label, value, sub=""):
+            st.markdown(f"""
+            <div class="metric-card">
+                <div style="font-size:0.9em; color:#666;">{label}</div>
+                <div style="font-size:1.5em; font-weight:bold; color:#E65100;">{value}</div>
+                <div style="font-size:0.8em; color:#888;">{sub}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        c1, c2, c3 = st.columns(3)
+        with c1: card(f"Giá {val_underlying_code}", f"{current_real_price:,.0f} ₫", "Thị trường (Real-time)")
+        with c2: card("Giá CW Lý thuyết", f"{cw_
