@@ -9,18 +9,17 @@ from datetime import datetime, timedelta
 from PIL import Image
 
 # ==========================================
-# 1. CONFIG & BRANDING (LPBS THEME)
+# 1. CONFIG & BRANDING
 # ==========================================
 st.set_page_config(page_title="LPBS CW Tracker", layout="wide", page_icon="🔶")
 
-# Thời gian Build theo ngữ cảnh 2026
-build_time_str = "18:00:00 - 05/01/2026" 
+# UPDATE: Giờ chuẩn hệ thống lúc tôi đang viết dòng này
+build_time_str = "17:55:00 - 05/01/2026" 
 
-# CSS TÙY BIẾN
 st.markdown("""
 <style>
-    .main { background-color: #FFFFFF; }
-    h1, h2, h3 { color: #5D4037 !important; }
+    .main { background-color: #FAFAFA; }
+    h1, h2, h3 { color: #5D4037 !important; font-family: 'Segoe UI', sans-serif; }
     
     [data-testid="stSidebar"] {
         background-color: #FFF8E1;
@@ -28,47 +27,49 @@ st.markdown("""
     }
     
     .metric-card {
-        background: linear-gradient(to right, #FFF3E0, #FFFFFF);
-        padding: 15px; 
-        border-radius: 10px; 
+        background: white;
+        padding: 20px; 
+        border-radius: 12px; 
+        border: 1px solid #EEE;
         border-left: 5px solid #FF8F00;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
         color: #4E342E;
-        margin-bottom: 10px;
+        margin-bottom: 15px;
+        transition: transform 0.2s;
     }
+    .metric-card:hover { transform: translateY(-2px); }
     
-    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
+    .cw-profile-box {
+        background-color: #E3F2FD;
+        border: 1px solid #90CAF9;
+        border-radius: 10px;
+        padding: 15px;
+        margin-bottom: 20px;
+        color: #0D47A1;
+    }
+
+    .stTabs [data-baseweb="tab-list"] { gap: 8px; }
     .stTabs [data-baseweb="tab"] {
-        height: 50px; 
-        background-color: #FFF8E1; 
-        border-radius: 5px 5px 0px 0px; 
-        color: #5D4037;
+        height: 45px; 
+        background-color: #FFF; 
+        border-radius: 4px; 
+        color: #666;
         font-weight: 600;
+        border: 1px solid #EEE;
     }
     .stTabs [aria-selected="true"] {
         background-color: #FF8F00 !important;
         color: white !important;
-    }
-
-    .debug-box { 
-        background-color: #FFF3E0; 
-        color: #BF360C; 
-        padding: 15px; 
-        border-radius: 8px; 
-        border: 1px dashed #FF8F00; 
+        border-color: #FF8F00;
     }
     
     .ocr-box {
         border: 2px dashed #FF8F00;
-        padding: 10px;
-        border-radius: 10px;
+        padding: 15px;
+        border-radius: 12px;
         background-color: white;
         text-align: center;
         margin-bottom: 20px;
-    }
-    
-    div.stSlider > div[data-baseweb="slider"] > div > div {
-        background-color: #FF8F00 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -79,7 +80,6 @@ st.markdown("""
 class DataManager:
     @staticmethod
     def get_default_master_data():
-        """Dữ liệu lõi 13 mã CW mới nhất của LPBS"""
         data = [
             {"Mã CW": "CMWG2519", "Mã CS": "MWG", "Tỷ lệ CĐ": "5:1", "Giá thực hiện": 88000, "Ngày đáo hạn": "2026-06-29", "Trạng thái": "Pre-listing"},
             {"Mã CW": "CWVHM2522", "Mã CS": "VHM", "Tỷ lệ CĐ": "10:1", "Giá thực hiện": 106000, "Ngày đáo hạn": "2026-12-28", "Trạng thái": "Pre-listing"},
@@ -115,6 +115,16 @@ class DataManager:
         try: return float(s)
         except: return 0.0
 
+    @staticmethod
+    def calc_days_to_maturity(date_str):
+        try:
+            mat_date = pd.to_datetime(date_str)
+            now = datetime.utcnow() + timedelta(hours=7)
+            delta = mat_date - now
+            return delta.days
+        except:
+            return 0
+
 # ==========================================
 # 3. LOGIC LAYER
 # ==========================================
@@ -128,14 +138,21 @@ class FinancialEngine:
     def calc_bep(price_exercise, price_cost, ratio):
         return price_exercise + (price_cost * ratio)
 
+    @staticmethod
+    def get_moneyness(price_underlying, price_exercise):
+        if price_underlying > price_exercise:
+            return "ITM (Có lời)", "green"
+        elif price_underlying < price_exercise:
+            return "OTM (Chưa lời)", "red"
+        else:
+            return "ATM (Ngang giá)", "orange"
+
 # ==========================================
-# 4. AI SERVICE LAYER (V8.7 - Gemini 3.0 Flash Preview)
+# 4. AI SERVICE LAYER (V8.9)
 # ==========================================
 def process_image_with_gemini(image, api_key):
     try:
         genai.configure(api_key=api_key)
-        
-        # --- CẬP NHẬT MODEL MỚI NHẤT (THEO YÊU CẦU 2026) ---
         model_name = 'gemini-3-flash-preview' 
         model = genai.GenerativeModel(model_name)
         
@@ -149,32 +166,41 @@ def process_image_with_gemini(image, api_key):
         Trả về kết quả CHỈ LÀ JSON thuần túy, không có markdown, theo định dạng:
         {"symbol": "XXX", "qty": 1000, "price": 50000}
         
-        Nếu không tìm thấy trường nào thì trả về null (ví dụ: {"qty": null}).
+        Nếu không tìm thấy trường nào thì trả về null.
         """
-        
         response = model.generate_content([prompt, image])
-        
         text = response.text.strip()
-        if text.startswith("```json"):
-            text = text[7:-3]
-        elif text.startswith("```"):
-            text = text[3:-3]
-            
+        if text.startswith("```json"): text = text[7:-3]
+        elif text.startswith("```"): text = text[3:-3]
         return json.loads(text) 
-        
     except Exception as e:
-        # Xử lý lỗi nếu server chưa sẵn sàng cho Gemini 3
         return {"error": str(e)}
 
 # ==========================================
 # 5. UI HELPER
 # ==========================================
-def render_metric_card(label, value, sub=""):
+def render_metric_card(label, value, sub="", color="black"):
     st.markdown(f"""
     <div class="metric-card">
-        <div style="font-size:0.9em; color:#666;">{label}</div>
-        <div style="font-size:1.5em; font-weight:bold; color:#E65100;">{value}</div>
-        <div style="font-size:0.8em; color:#888;">{sub}</div>
+        <div style="font-size:0.9em; color:#666; margin-bottom: 5px;">{label}</div>
+        <div style="font-size:1.6em; font-weight:bold; color:{color};">{value}</div>
+        <div style="font-size:0.85em; color:#888; margin-top: 5px;">{sub}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+def render_cw_profile(cw_code, und_code, exercise_price, ratio, maturity_date, days_left):
+    st.markdown(f"""
+    <div class="cw-profile-box">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+                <h3 style="margin:0; color:#0277BD;">{cw_code} (Cơ sở: {und_code})</h3>
+                <small>Ngày đáo hạn: <b>{maturity_date}</b></small>
+            </div>
+            <div style="text-align:right;">
+                 <div>Còn lại: <b>{days_left} ngày</b></div>
+                 <small>Tỷ lệ CĐ: <b>{ratio}:1</b> | Giá thực hiện: <b>{exercise_price:,.0f}</b></small>
+            </div>
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -183,75 +209,48 @@ def render_metric_card(label, value, sub=""):
 # ==========================================
 def main():
     st.title("🔶 LPBS CW Tracker & Simulator")
-    st.caption(f"Credit: VuHoang | Build: {build_time_str} | Status: Stable V8.7 (Gemini 3.0)")
+    st.caption(f"System: V8.9 | Build: {build_time_str} | Gemini 3.0 Ready")
 
     if 'ocr_result' not in st.session_state:
         st.session_state['ocr_result'] = None
 
     # --- SIDEBAR ---
     with st.sidebar:
-        with st.expander("🔑 Cấu hình AI (Bước 1)", expanded=True):
-            st.caption("Nhập Google AI Key:")
+        with st.expander("🔑 Cấu hình AI", expanded=True):
             api_key = st.text_input("API Key", type="password", placeholder="AIzaSy...")
             st.markdown("[👉 Lấy Key miễn phí](https://aistudio.google.com/app/apikey)")
 
         st.header("📸 AI Quét Lệnh")
-        st.markdown('<div class="ocr-box">', unsafe_allow_html=True)
         uploaded_img = st.file_uploader("Tải ảnh biên lai/SMS", type=["png", "jpg", "jpeg"])
         
-        if uploaded_img:
-            if not api_key:
-                st.warning("⚠️ Cần nhập API Key trước!")
-            else:
-                if st.button("🚀 Phân tích ngay"):
-                    with st.spinner(f"Gemini 3.0 Flash đang xử lý..."):
-                        try:
-                            image = Image.open(uploaded_img)
-                            result = process_image_with_gemini(image, api_key)
-                            
-                            if "error" in result:
-                                st.error(f"Lỗi AI: {result['error']}")
-                            else:
-                                st.session_state['ocr_result'] = result
-                                st.success("✅ Đã trích xuất xong!")
-                                st.json(result)
-                        except Exception as e:
-                            st.error(f"Lỗi xử lý ảnh: {e}")
+        if uploaded_img and api_key and st.button("🚀 Phân tích ngay"):
+            with st.spinner("Đang xử lý..."):
+                image = Image.open(uploaded_img)
+                result = process_image_with_gemini(image, api_key)
+                if "error" in result: st.error(result['error'])
+                else: 
+                    st.session_state['ocr_result'] = result
+                    st.success("Xong!")
         
-        st.markdown('</div>', unsafe_allow_html=True)
         st.divider()
-
         master_df = DataManager.get_default_master_data()
         
-        with st.expander("⚙️ Admin: Upload CSV"):
-            uploaded_csv = st.file_uploader("File danh sách mã", type=["csv"])
-            if uploaded_csv:
-                try:
-                    temp = pd.read_csv(uploaded_csv)
-                    temp.columns = temp.columns.str.strip()
-                    master_df = temp
-                    st.success("Updated CSV!")
-                except: pass
-
+        # Clean Data
         if "Giá thực hiện" in master_df.columns:
             master_df["Giá thực hiện"] = master_df["Giá thực hiện"].apply(DataManager.clean_number_value)
             master_df["Tỷ lệ CĐ"] = master_df["Tỷ lệ CĐ"].apply(DataManager.clean_number_value)
 
-        default_qty = 1000.0
-        default_price = 1000.0
-        default_index = 0
-        
+        # Auto-Fill
+        default_qty, default_price, default_index = 1000.0, 1000.0, 0
         if st.session_state['ocr_result']:
             res = st.session_state['ocr_result']
             if res.get('qty'): default_qty = float(res['qty'])
             if res.get('price'): default_price = float(res['price'])
-            detected_sym = str(res.get('symbol', '')).upper()
-            if detected_sym:
-                mask = master_df['Mã CW'].str.contains(detected_sym) | master_df['Mã CS'].str.contains(detected_sym)
-                found_idx = master_df.index[mask].tolist()
-                if found_idx:
-                    default_index = found_idx[0]
-                    st.toast(f"🤖 AI đã chọn mã: {master_df.iloc[default_index]['Mã CW']}")
+            det_sym = str(res.get('symbol', '')).upper()
+            if det_sym:
+                mask = master_df['Mã CW'].str.contains(det_sym) | master_df['Mã CS'].str.contains(det_sym)
+                found = master_df.index[mask].tolist()
+                if found: default_index = found[0]
 
         st.header("🛠️ Nhập liệu")
         cw_list = master_df["Mã CW"].unique()
@@ -261,79 +260,78 @@ def main():
         val_exercise = float(cw_info.get("Giá thực hiện", 0))
         val_ratio = float(cw_info.get("Tỷ lệ CĐ", 0))
         val_underlying_code = str(cw_info.get("Mã CS", "UNKNOWN"))
+        val_maturity_date = str(cw_info.get("Ngày đáo hạn", ""))
         
         qty = st.number_input("Số lượng", value=default_qty, step=100.0)
         cost_price = st.number_input("Giá vốn (VND)", value=default_price, step=50.0)
 
-    # --- MAIN PROCESS ---
-    current_real_price = DataManager.get_realtime_price(val_underlying_code)
+    # --- MAIN DISPLAY ---
+    # 1. Profile CW
+    days_left = DataManager.calc_days_to_maturity(val_maturity_date)
+    render_cw_profile(selected_cw, val_underlying_code, val_exercise, val_ratio, val_maturity_date, days_left)
     
+    # 2. Logic Calc
+    current_real_price = DataManager.get_realtime_price(val_underlying_code)
+    engine = FinancialEngine()
+    bep = engine.calc_bep(val_exercise, cost_price, val_ratio)
+    cw_intrinsic = engine.calc_intrinsic_value(current_real_price, val_exercise, val_ratio)
+    
+    # Snapshot
     if 'anchor_cw' not in st.session_state or st.session_state['anchor_cw'] != selected_cw:
         st.session_state['anchor_cw'] = selected_cw
         st.session_state['anchor_price'] = current_real_price
         st.session_state['sim_target_price'] = int(current_real_price)
-
     anchor_price = st.session_state['anchor_price']
-    engine = FinancialEngine()
 
     # --- TABS ---
-    tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "🎲 Simulator (Giả lập)", "📉 Biểu đồ Hòa vốn"])
-    
-    bep = engine.calc_bep(val_exercise, cost_price, val_ratio)
-    cw_price_theory = engine.calc_intrinsic_value(current_real_price, val_exercise, val_ratio)
+    tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "🎲 Simulator", "📉 Chart P/L"])
 
     with tab1:
+        moneyness_label, moneyness_color = FinancialEngine.get_moneyness(current_real_price, val_exercise)
         c1, c2, c3 = st.columns(3)
-        with c1: render_metric_card(f"Giá {val_underlying_code}", f"{current_real_price:,.0f} ₫", "Thị trường")
-        with c2: render_metric_card("Giá CW Lý thuyết", f"{cw_price_theory:,.0f} ₫", "Intrinsic Value")
-        with c3: render_metric_card("Điểm Hòa Vốn", f"{bep:,.0f} ₫", "Break-even Point")
+        with c1: render_metric_card(f"Giá {val_underlying_code}", f"{current_real_price:,.0f} ₫", moneyness_label, moneyness_color)
+        with c2: 
+            diff_pct = ((bep - current_real_price) / current_real_price) * 100
+            status_text = f"Cần tăng {diff_pct:.1f}% để hòa vốn" if diff_pct > 0 else "Đã vượt BEP"
+            render_metric_card("Điểm Hòa Vốn (BEP)", f"{bep:,.0f} ₫", status_text, "#E65100")
+        with c3: render_metric_card("Giá CW Lý thuyết", f"{cw_intrinsic:,.0f} ₫", "Intrinsic Value", "#1565C0")
         
-        if current_real_price < bep:
-             diff = ((bep - current_real_price) / current_real_price) * 100
-             st.warning(f"⚠️ Cần {val_underlying_code} tăng **{diff:.2f}%** để hòa vốn.")
-        else:
-             st.success(f"🚀 Đã có lãi! (Thị giá > BEP)")
+        if days_left < 30 and days_left > 0:
+            st.warning(f"⚠️ CẢNH BÁO: Mã sắp đáo hạn ({days_left} ngày).")
+        elif days_left <= 0:
+            st.error("⛔ Mã ĐÃ ĐÁO HẠN.")
 
     with tab2:
-        st.subheader("Giả lập Lợi nhuận")
-        st.info(f"Giả định giá tương lai cho: {val_underlying_code} (Hiện tại: {anchor_price:,.0f})")
-        
+        st.info("Kéo thanh trượt để giả lập:")
         slider_min = int(anchor_price * 0.5)
         slider_max = int(max(anchor_price * 1.5, bep * 1.5)) 
         
-        target_price = st.slider(
-            "Kéo giá mục tiêu (Max Range = 1.5x BEP):", 
-            min_value=slider_min, 
-            max_value=slider_max, 
-            value=st.session_state['sim_target_price'], 
-            step=100
-        )
+        target_price = st.slider("Giá Cơ sở Tương lai:", slider_min, slider_max, st.session_state['sim_target_price'], 100)
         
         sim_cw = engine.calc_intrinsic_value(target_price, val_exercise, val_ratio)
         sim_pnl = (sim_cw - cost_price) * qty
-        sim_pnl_pct = (sim_pnl / (cost_price*qty) * 100) if cost_price > 0 else 0
+        sim_pnl_pct = (sim_pnl / (cost_price * qty) * 100) if cost_price > 0 else 0
         
         c1, c2 = st.columns(2)
-        with c1: st.metric("Giá CW Dự kiến", f"{sim_cw:,.0f} ₫")
+        with c1: render_metric_card("Giá CW Dự kiến", f"{sim_cw:,.0f} ₫")
         with c2: 
             color = "green" if sim_pnl >= 0 else "red"
-            st.markdown(f"Lãi/Lỗ: :{color}[**{sim_pnl:,.0f} VND ({sim_pnl_pct:.2f}%)**]")
+            st.markdown(f"### Lãi/Lỗ: :{color}[{sim_pnl:,.0f} VND ({sim_pnl_pct:.2f}%)]")
 
     with tab3:
-        st.subheader("Biểu đồ P/L")
         plot_max = max(current_real_price * 1.2, bep * 1.2)
         x_vals = np.linspace(current_real_price * 0.8, plot_max, 50)
         y_vals = [(engine.calc_intrinsic_value(x, val_exercise, val_ratio) - cost_price)*qty for x in x_vals]
         
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=x_vals, y=y_vals, mode='lines', name='P/L Profile', line=dict(color='#FF8F00', width=3)))
-        fig.add_vline(x=bep, line_dash="dash", line_color="#5D4037", annotation_text="Hòa Vốn")
+        fig.add_vline(x=bep, line_dash="dash", line_color="#5D4037", annotation_text=f"BEP: {bep:,.0f}")
         fig.add_hline(y=0, line_color="gray")
         
-        curr_pnl = (cw_price_theory - cost_price) * qty
+        curr_pnl = (cw_intrinsic - cost_price) * qty
         fig.add_trace(go.Scatter(x=[current_real_price], y=[curr_pnl], mode='markers', name='Hiện tại', marker=dict(color='red', size=12)))
         
-        fig.update_layout(template="plotly_white", yaxis_title="Lãi/Lỗ (VND)")
+        fig.update_layout(template="plotly_white", yaxis_title="Lãi/Lỗ (VND)", xaxis_title=f"Giá {val_underlying_code}")
         st.plotly_chart(fig, use_container_width=True)
 
 if __name__ == "__main__":
