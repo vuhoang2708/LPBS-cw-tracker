@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-import re
 
 # ==========================================
 # 1. CONFIG & SYSTEM SETTINGS
@@ -15,7 +14,6 @@ st.markdown("""
     .stTabs [data-baseweb="tab-list"] { gap: 24px; }
     .stTabs [data-baseweb="tab"] { height: 50px; white-space: pre-wrap; background-color: #f0f2f6; border-radius: 4px 4px 0px 0px; gap: 1px; padding-top: 10px; padding-bottom: 10px; }
     .stTabs [aria-selected="true"] { background-color: #FFFFFF; border-bottom: 2px solid #4CAF50; }
-    .uploaded-file { border: 1px dashed #4CAF50; padding: 10px; border-radius: 5px; text-align: center; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -24,22 +22,22 @@ st.markdown("""
 # ==========================================
 class DataManager:
     @staticmethod
-    def get_default_master_data():
+    def get_master_data():
         return pd.DataFrame([
-            {"Mã CW": "CHPG2316", "Mã CS": "HPG", "Tỷ lệ CĐ": 2, "Giá thực hiện": 28000, "Ngày đáo hạn": "2026-06-01", "Trạng thái": "Listed"},
+            {"Mã CW": "CHPG2301", "Mã CS": "HPG", "Tỷ lệ CĐ": 2, "Giá thực hiện": 20000, "Ngày đáo hạn": "2026-06-01", "Trạng thái": "Listed"},
             {"Mã CW": "CMWG2305", "Mã CS": "MWG", "Tỷ lệ CĐ": 5, "Giá thực hiện": 45000, "Ngày đáo hạn": "2026-12-31", "Trạng thái": "Pre-listing"},
-            {"Mã CW": "CVHM2322", "Mã CS": "VHM", "Tỷ lệ CĐ": 4, "Giá thực hiện": 42000, "Ngày đáo hạn": "2026-08-15", "Trạng thái": "Listed"},
+            {"Mã CW": "CVHM2302", "Mã CS": "VHM", "Tỷ lệ CĐ": 4, "Giá thực hiện": 40000, "Ngày đáo hạn": "2026-08-15", "Trạng thái": "Listed"},
         ])
 
     @staticmethod
     def get_realtime_price(symbol):
+        # Giả lập giá biến động
         base_prices = {
-            "HPG": 28500, "MWG": 48200, "VHM": 41800, "STB": 30500, "VNM": 66000,
-            "FPT": 95000, "MBB": 18500, "TCB": 33000, "VPB": 19200, "MSN": 62000,
-            "VIB": 21500, "SHB": 11200, "ACB": 24500
+            "HPG": 28500, "MWG": 48200, "VHM": 41800,
+            "CHPG2301": 4300, "CVHM2302": 550
         }
         noise = np.random.uniform(0.99, 1.01)
-        return base_prices.get(symbol, 20000) * noise
+        return base_prices.get(symbol, 0) * noise
 
 # ==========================================
 # 3. LOGIC LAYER
@@ -47,105 +45,56 @@ class DataManager:
 class FinancialEngine:
     @staticmethod
     def calc_intrinsic_value(price_underlying, price_exercise, ratio):
-        try:
-            p_u = float(price_underlying)
-            p_e = float(price_exercise)
-            r = float(ratio)
-            if r == 0: return 0
-            return max((p_u - p_e) / r, 0)
-        except:
-            return 0
+        return max((price_underlying - price_exercise) / ratio, 0)
 
     @staticmethod
     def calc_bep(price_exercise, price_cost, ratio):
-        try:
-            p_e = float(price_exercise)
-            p_c = float(price_cost)
-            r = float(ratio)
-            return p_e + (p_c * r)
-        except:
-            return 0
+        return price_exercise + (price_cost * ratio)
 
 # ==========================================
 # 4. UI PRESENTATION
 # ==========================================
 def main():
     st.title("📈 LPBank Invest - CW Tracker & Simulator")
-    # --- CẬP NHẬT VERSION TIMESTAMP ---
-    st.caption("System Architect: AI Guardian | Version: 4.3 | Build: 14:55 05/01/2026 (Fix Data Parsing)")
+    st.caption("System Architect: AI Guardian | Version: 3.2 (Snapshot Fix)")
 
-    # --- SIDEBAR: IMPORT & CONFIG ---
+    # --- SIDEBAR ---
     with st.sidebar:
-        st.header("📂 Dữ liệu Nguồn (Master Data)")
-        
-        uploaded_file = st.file_uploader("Upload danh sách CW (CSV)", type=["csv"])
-        
-        if uploaded_file is not None:
-            try:
-                master_df = pd.read_csv(uploaded_file)
-                master_df.columns = master_df.columns.str.strip()
-                
-                # === DATA CLEANING (REGEX) ===
-                numeric_cols = ["Giá thực hiện", "Tỷ lệ CĐ"]
-                for col in numeric_cols:
-                    if col in master_df.columns:
-                        # Chỉ giữ lại số và dấu chấm
-                        master_df[col] = master_df[col].astype(str).apply(lambda x: re.sub(r'[^\d.]', '', x))
-                        master_df[col] = pd.to_numeric(master_df[col], errors='coerce').fillna(0)
-                # =============================
-
-                st.success(f"✅ Đã tải {len(master_df)} mã CW từ file.")
-            except Exception as e:
-                st.error(f"Lỗi đọc file: {e}")
-                master_df = DataManager.get_default_master_data()
-        else:
-            st.info("Đang dùng dữ liệu mẫu. Hãy upload file CSV để cập nhật.")
-            master_df = DataManager.get_default_master_data()
-
-        st.divider()
-        st.header("🛠️ Nhập liệu Cá nhân")
-        
-        if master_df.empty:
-            st.error("File CSV không có dữ liệu hợp lệ!")
-            st.stop()
-
-        cw_list = master_df["Mã CW"].unique()
-        selected_cw = st.selectbox("Chọn Mã CW", cw_list)
-        
+        st.header("🛠️ Cấu hình Danh mục")
+        master_df = DataManager.get_master_data()
+        selected_cw = st.selectbox("Chọn Mã CW", master_df["Mã CW"].unique())
         cw_info = master_df[master_df["Mã CW"] == selected_cw].iloc[0]
         
         qty = st.number_input("Số lượng sở hữu", value=1000, step=100)
         cost_price = st.number_input("Giá vốn bình quân (VND)", value=1000, step=50)
         
-        st.markdown(f"""
-        **Thông số kỹ thuật:**
-        - Mã CS: `{cw_info['Mã CS']}`
-        - Giá TH: `{cw_info['Giá thực hiện']:,.0f}`
-        - Tỷ lệ: `{cw_info['Tỷ lệ CĐ']}`
-        - Đáo hạn: `{cw_info['Ngày đáo hạn']}`
-        """)
+        st.info(f"ℹ️ **Thông tin {selected_cw}**\n\n- Mã CS: {cw_info['Mã CS']}\n- Giá TH: {cw_info['Giá thực hiện']:,}\n- Tỷ lệ: {cw_info['Tỷ lệ CĐ']}:1")
 
     # --- DATA PROCESSING ---
+    # 1. Lấy giá Real-time (Biến động liên tục)
     current_real_price = DataManager.get_realtime_price(cw_info["Mã CS"])
     
-    # Snapshot Mechanism (GIỮ NGUYÊN)
+    # 2. Xử lý State cho Simulator (QUAN TRỌNG: SNAPSHOT MECHANISM)
+    # Nếu chưa có 'anchor_cw' hoặc người dùng đổi mã CW khác
     if 'anchor_cw' not in st.session_state or st.session_state['anchor_cw'] != selected_cw:
         st.session_state['anchor_cw'] = selected_cw
-        st.session_state['anchor_price'] = current_real_price
-        st.session_state['sim_target_price'] = int(current_real_price)
+        st.session_state['anchor_price'] = current_real_price # Chụp lại giá lúc mới vào làm mốc
+        st.session_state['sim_target_price'] = int(current_real_price) # Reset thanh trượt về mốc này
 
+    # Lấy giá mốc ra để tính Min/Max cho Slider (Giá này ĐỨNG YÊN, không nhảy)
     anchor_price = st.session_state['anchor_price']
 
     # --- CORE CALCULATION ---
     engine = FinancialEngine()
     bep = engine.calc_bep(cw_info["Giá thực hiện"], cost_price, cw_info["Tỷ lệ CĐ"])
     
+    # Tính giá CW hiện tại (Dùng giá Real-time để hiển thị Dashboard cho đúng thực tế)
     if cw_info['Trạng thái'] == 'Pre-listing':
         current_cw_price = engine.calc_intrinsic_value(current_real_price, cw_info["Giá thực hiện"], cw_info["Tỷ lệ CĐ"])
         note = "⚠️ Giá trị nội tại (Pre-listing)"
     else:
-        market_cw_price = engine.calc_intrinsic_value(current_real_price, cw_info["Giá thực hiện"], cw_info["Tỷ lệ CĐ"]) * np.random.uniform(1.0, 1.05)
-        current_cw_price = market_cw_price
+        market_cw_price = DataManager.get_realtime_price(selected_cw)
+        current_cw_price = market_cw_price if market_cw_price > 0 else engine.calc_intrinsic_value(current_real_price, cw_info["Giá thực hiện"], cw_info["Tỷ lệ CĐ"])
         note = "✅ Giá thị trường (Listed)"
 
     pnl = (current_cw_price - cost_price) * qty
@@ -169,14 +118,14 @@ def main():
 
     with tab2:
         st.subheader("Giả lập Lợi nhuận theo Kỳ vọng")
-        st.write(f"Giá tham chiếu cố định: **{anchor_price:,.0f} VND**")
+        st.write(f"Giá tham chiếu cố định: **{anchor_price:,.0f} VND** (Không bị nhảy theo thị trường)")
         
-        # GIỮ NGUYÊN LOGIC SLIDER
+        # SLIDER FIX: Dùng Min/Max cố định theo anchor_price
         target_price = st.slider(
             f"Giá mục tiêu {cw_info['Mã CS']}", 
             min_value=int(anchor_price * 0.8), 
             max_value=int(anchor_price * 1.5), 
-            key="sim_target_price",
+            key="sim_target_price", # Key này lưu giá trị vào session_state
             step=100
         )
         
@@ -193,6 +142,7 @@ def main():
 
     with tab3:
         st.subheader("Phân tích Điểm Hòa Vốn Trực quan")
+        # Vẽ biểu đồ dựa trên giá Real-time để thấy vị trí hiện tại chính xác nhất
         x_values = np.linspace(current_real_price * 0.8, current_real_price * 1.2, 50)
         y_pnl = []
         for x in x_values:
