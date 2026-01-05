@@ -129,17 +129,24 @@ class FinancialEngine:
         return price_exercise + (price_cost * ratio)
 
 # ==========================================
-# 4. AI SERVICE LAYER (NEW)
+# 4. AI SERVICE LAYER (UPDATED V8.1)
 # ==========================================
 def process_image_with_gemini(image, api_key):
     """
-    Gửi ảnh lên Gemini Flash để trích xuất dữ liệu.
-    Trả về dict: {'symbol': '...', 'qty': ..., 'price': ...}
+    Gửi ảnh lên Gemini để trích xuất dữ liệu.
+    Cố gắng dùng model mới nhất.
     """
     try:
         genai.configure(api_key=api_key)
-        # Sử dụng model Flash cho tốc độ nhanh và rẻ
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        
+        # --- CẤU HÌNH MODEL ---
+        # Ưu tiên Gemini 3 Flash nếu có, không thì về 1.5 Flash Latest
+        # Lưu ý: 'gemini-3-flash-preview' có thể cần waitlist.
+        # Để an toàn, tôi dùng 'gemini-1.5-flash-latest' (Bản ổn định nhất).
+        # Nếu muốn thử Gemini 3, hãy đổi thành: model_name = 'gemini-3-flash-preview'
+        model_name = 'gemini-flash-latest' 
+        
+        model = genai.GenerativeModel(model_name)
         
         prompt = """
         Bạn là một trợ lý nhập liệu tài chính (OCR). Nhiệm vụ:
@@ -165,6 +172,9 @@ def process_image_with_gemini(image, api_key):
             
         return eval(text) # Chuyển string thành dict
     except Exception as e:
+        # Bắt lỗi 404 để báo người dùng biết do model
+        if "404" in str(e):
+            return {"error": f"Model {model_name} không tìm thấy. Hãy thử đổi sang 'gemini-1.5-flash' hoặc cập nhật thư viện."}
         return {"error": str(e)}
 
 # ==========================================
@@ -184,7 +194,7 @@ def render_metric_card(label, value, sub=""):
 # ==========================================
 def main():
     st.title("🔶 LPBS CW Tracker & Simulator")
-    st.caption(f"Credit: VuHoang | Build: {build_time_str} | Status: Stable V8.0 (AI Inside)")
+    st.caption(f"Credit: VuHoang | Build: {build_time_str} | Status: Stable V8.1 (Gemini Fix)")
 
     # Init Session State cho AI
     if 'ocr_result' not in st.session_state:
@@ -208,7 +218,7 @@ def main():
                 st.warning("⚠️ Vui lòng nhập API Key ở trên trước!")
             else:
                 if st.button("🚀 Phân tích ngay"):
-                    with st.spinner("Gemini đang đọc ảnh..."):
+                    with st.spinner("Đang gửi lệnh lên Gemini AI..."):
                         try:
                             image = Image.open(uploaded_img)
                             result = process_image_with_gemini(image, api_key)
@@ -258,7 +268,6 @@ def main():
             # 2. Fill Mã (Tìm tương đối)
             detected_sym = str(res.get('symbol', '')).upper()
             if detected_sym:
-                # Tìm xem mã AI đọc được có nằm trong cột Mã CW hoặc Mã CS không
                 mask = master_df['Mã CW'].str.contains(detected_sym) | master_df['Mã CS'].str.contains(detected_sym)
                 found_idx = master_df.index[mask].tolist()
                 if found_idx:
