@@ -4,6 +4,7 @@ import numpy as np
 import plotly.graph_objects as go
 import re
 import google.generativeai as genai
+import json
 from datetime import datetime, timedelta
 from PIL import Image
 
@@ -12,9 +13,9 @@ from PIL import Image
 # ==========================================
 st.set_page_config(page_title="LPBS CW Tracker", layout="wide", page_icon="🔶")
 
-# Tính giờ Việt Nam
-vn_time = datetime.utcnow() + timedelta(hours=7)
-build_time_str = vn_time.strftime("%H:%M:%S - %d/%m/%Y")
+# --- THAY ĐỔI: CHỐT CỨNG THỜI GIAN BUILD ---
+# Thay vì tính toán động, giờ ta ghi chết mốc thời gian tạo code
+build_time_str = "17:40:00 - 05/01/2026" 
 
 # CSS TÙY BIẾN
 st.markdown("""
@@ -129,14 +130,12 @@ class FinancialEngine:
         return price_exercise + (price_cost * ratio)
 
 # ==========================================
-# 4. AI SERVICE LAYER (V8.3 - User Tuned)
+# 4. AI SERVICE LAYER (V8.4 - JSON FIX)
 # ==========================================
 def process_image_with_gemini(image, api_key):
     try:
         genai.configure(api_key=api_key)
-        # Sửa thành model user xác nhận chạy tốt
-        model_name = 'gemini-3-flash-preview' 
-        
+        model_name = 'gemini-3-flash-preview'
         model = genai.GenerativeModel(model_name)
         
         prompt = """
@@ -149,7 +148,7 @@ def process_image_with_gemini(image, api_key):
         Trả về kết quả CHỈ LÀ JSON thuần túy, không có markdown, theo định dạng:
         {"symbol": "XXX", "qty": 1000, "price": 50000}
         
-        Nếu không tìm thấy trường nào thì để null.
+        Nếu không tìm thấy trường nào thì trả về null (ví dụ: {"qty": null}).
         """
         
         response = model.generate_content([prompt, image])
@@ -160,7 +159,8 @@ def process_image_with_gemini(image, api_key):
         elif text.startswith("```"):
             text = text[3:-3]
             
-        return eval(text)
+        return json.loads(text) 
+        
     except Exception as e:
         if "404" in str(e):
             return {"error": f"Model {model_name} không tìm thấy. Vui lòng kiểm tra lại API Key."}
@@ -183,7 +183,7 @@ def render_metric_card(label, value, sub=""):
 # ==========================================
 def main():
     st.title("🔶 LPBS CW Tracker & Simulator")
-    st.caption(f"Credit: VuHoang | Build: {build_time_str} | Status: Stable V8.3 (Tuned)")
+    st.caption(f"Credit: VuHoang | Build: {build_time_str} | Status: Stable V8.5 (Final Static)")
 
     if 'ocr_result' not in st.session_state:
         st.session_state['ocr_result'] = None
@@ -298,9 +298,6 @@ def main():
         st.subheader("Giả lập Lợi nhuận")
         st.info(f"Giả định giá tương lai cho: {val_underlying_code} (Hiện tại: {anchor_price:,.0f})")
         
-        # --- FIX: LOGIC SLIDER THEO YÊU CẦU ---
-        # Slider Max = Max(150% giá hiện tại, 150% điểm hòa vốn)
-        # Đảm bảo kéo thoải mái qua điểm hòa vốn
         slider_min = int(anchor_price * 0.5)
         slider_max = int(max(anchor_price * 1.5, bep * 1.5)) 
         
@@ -339,5 +336,4 @@ def main():
         fig.update_layout(template="plotly_white", yaxis_title="Lãi/Lỗ (VND)")
         st.plotly_chart(fig, use_container_width=True)
 
-if __name__ == "__main__":
-    main()
+if __name__
