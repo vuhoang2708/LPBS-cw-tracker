@@ -13,8 +13,8 @@ from PIL import Image
 # ==========================================
 st.set_page_config(page_title="LPBS CW Tracker", layout="wide", page_icon="🔶")
 
-# UPDATE: Giờ thực tế
-build_time_str = "18:20:00 - 05/01/2026" 
+# UPDATE: Giờ chuẩn 19:00
+build_time_str = "19:00:00 - 05/01/2026" 
 
 st.markdown("""
 <style>
@@ -148,41 +148,43 @@ class FinancialEngine:
             return "ATM (Ngang giá)", "orange"
 
 # ==========================================
-# 4. AI SERVICE LAYER (V9.4 - BULLETPROOF REGEX)
+# 4. AI SERVICE LAYER (V9.6 - GEMINI 3.0 PRO)
 # ==========================================
 def process_image_with_gemini(image, api_key):
     try:
         genai.configure(api_key=api_key)
         
-        # Vẫn dùng model Pro mới nhất
-        model_name = 'gemini-1.5-pro-latest' 
+        # --- FIX: DÙNG ĐÚNG MODEL GEMINI 3.0 PRO ---
+        model_name = 'gemini-3-pro' 
         
         generation_config = genai.types.GenerationConfig(temperature=0.0)
         model = genai.GenerativeModel(model_name)
         
         prompt = """
         Bạn là một trợ lý nhập liệu tài chính (OCR). Nhiệm vụ:
-        1. Tìm chính xác Mã chứng khoán (ví dụ: CMWG..., CWVHM..., VHM, MWG...).
+        1. Tìm chính xác Mã chứng khoán (CMWG..., CWVHM..., VHM, MWG...).
+           - Lưu ý: Chữ "W" và "V" rất dễ nhầm. Hãy nhìn kỹ ngữ cảnh. Mã CW thường bắt đầu bằng C (ví dụ CWVHM).
         2. Tìm Số lượng và Giá.
         
-        QUAN TRỌNG: Chỉ trả về chuỗi JSON, không thêm bất kỳ lời dẫn nào.
+        Yêu cầu: Trả về JSON thuần túy.
         Format: {"symbol": "XXX", "qty": 1000, "price": 50000}
         """
         
         response = model.generate_content([prompt, image], generation_config=generation_config)
         text = response.text.strip()
         
-        # --- FIX: TRÍCH XUẤT JSON BẰNG REGEX ---
-        # Tìm đoạn text bắt đầu bằng { và kết thúc bằng }
+        # --- JSON PARSING BẰNG REGEX (GIỮ NGUYÊN) ---
         match = re.search(r'\{.*\}', text, re.DOTALL)
         if match:
             json_str = match.group(0)
             return json.loads(json_str)
         else:
-            # Fallback nếu không tìm thấy cấu trúc JSON
-            return {"error": "Không tìm thấy dữ liệu JSON hợp lệ."}
+            return {"error": "AI không trả về dữ liệu JSON hợp lệ."}
             
     except Exception as e:
+        # Nếu tài khoản Free chưa được cấp quyền 3.0, fallback về 2.0 Flash
+        if "404" in str(e):
+             return {"error": f"Tài khoản của bạn chưa kích hoạt {model_name}. Hãy thử model 'gemini-2.0-flash-exp' hoặc kiểm tra lại Key."}
         return {"error": str(e)}
 
 # ==========================================
@@ -218,7 +220,7 @@ def render_cw_profile(cw_code, und_code, exercise_price, ratio, maturity_date, d
 # ==========================================
 def main():
     st.title("🔶 LPBS CW Tracker & Simulator")
-    st.caption(f"System: V9.4 | Build: {build_time_str} | Gemini Pro (Regex Fix)")
+    st.caption(f"System: V9.6 | Build: {build_time_str} | Gemini 3.0 Pro (Fixed)")
 
     if 'ocr_result' not in st.session_state:
         st.session_state['ocr_result'] = None
@@ -234,7 +236,7 @@ def main():
         
         if uploaded_img and api_key:
             if st.button("🚀 Phân tích ngay"):
-                with st.spinner("Gemini Pro đang xử lý..."):
+                with st.spinner("Gemini 3.0 Pro đang xử lý..."):
                     image = Image.open(uploaded_img)
                     result = process_image_with_gemini(image, api_key)
                     
