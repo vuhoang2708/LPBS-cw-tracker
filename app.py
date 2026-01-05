@@ -155,7 +155,7 @@ def process_image_with_gemini(image, api_key):
         genai.configure(api_key=api_key)
         
         # --- FIX: DÙNG ĐÚNG MODEL GEMINI 3.0 PRO ---
-        model_name = 'gemini-3-pro' 
+        model_name = 'gemini-3-pro-preview' 
         
         generation_config = genai.types.GenerationConfig(temperature=0.0)
         model = genai.GenerativeModel(model_name)
