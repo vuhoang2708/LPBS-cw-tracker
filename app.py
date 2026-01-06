@@ -17,7 +17,7 @@ st.set_page_config(page_title="LPBS CW Tracker & Simulator", layout="wide", page
 vn_time = datetime.utcnow() + timedelta(hours=7)
 build_time_str = vn_time.strftime("%H:%M:%S - %d/%m/%Y")
 
-# --- SECURITY: CHỈ DÙNG SECRETS HOẶC NHẬP TAY ---
+# --- SECURITY ---
 if "GEMINI_API_KEY" in st.secrets:
     SYSTEM_API_KEY = st.secrets["GEMINI_API_KEY"]
 else:
@@ -27,13 +27,7 @@ st.markdown("""
 <style>
     .main { background-color: #FAFAFA; }
     h1, h2, h3 { color: #5D4037 !important; font-family: 'Segoe UI', sans-serif; }
-    
-    [data-testid="stSidebar"] {
-        background-color: #FFF8E1;
-        border-right: 1px solid #FFECB3;
-    }
-    
-    /* UX: Tùy chỉnh Tab & Radio */
+    [data-testid="stSidebar"] { background-color: #FFF8E1; border-right: 1px solid #FFECB3; }
     .stTabs [data-baseweb="tab-list"] { gap: 8px; }
     .stTabs [data-baseweb="tab"] {
         height: 45px; background-color: #FFF; border-radius: 6px; 
@@ -42,22 +36,12 @@ st.markdown("""
     .stTabs [aria-selected="true"] {
         background-color: #FF8F00 !important; color: white !important; border-color: #FF8F00;
     }
-    
     .stRadio [role="radiogroup"] {
         background-color: #FFF; padding: 10px; border-radius: 8px;
         border: 1px solid #EEE; justify-content: center;
     }
-
-    .metric-card {
-        background: white; padding: 20px; border-radius: 12px; 
-        border: 1px solid #EEE; border-left: 5px solid #FF8F00;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05); color: #4E342E; margin-bottom: 15px;
-    }
-    
-    .cw-profile-box {
-        background-color: #E3F2FD; border: 1px solid #90CAF9;
-        border-radius: 10px; padding: 15px; margin-bottom: 20px; color: #0D47A1;
-    }
+    .metric-card { background: white; padding: 20px; border-radius: 12px; border: 1px solid #EEE; border-left: 5px solid #FF8F00; box-shadow: 0 4px 6px rgba(0,0,0,0.05); color: #4E342E; margin-bottom: 15px; }
+    .cw-profile-box { background-color: #E3F2FD; border: 1px solid #90CAF9; border-radius: 10px; padding: 15px; margin-bottom: 20px; color: #0D47A1; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -68,7 +52,7 @@ class DataManager:
     @staticmethod
     def get_default_master_data():
         data = [
-            {"Mã CW": "CMWG2519", "Mã CS": "MWG", "Tỷ lệ CĐ": "5:1", "Giá thực hiện": 88000, "Ngày đáo hạn": "2026-06-29", "Trạng thái": "Pre-listing"},
+            {"Mã CW": "CWMWG2519", "Mã CS": "MWG", "Tỷ lệ CĐ": "5:1", "Giá thực hiện": 88000, "Ngày đáo hạn": "2026-06-29", "Trạng thái": "Pre-listing"},
             {"Mã CW": "CWVHM2522", "Mã CS": "VHM", "Tỷ lệ CĐ": "10:1", "Giá thực hiện": 106000, "Ngày đáo hạn": "2026-12-28", "Trạng thái": "Pre-listing"},
             {"Mã CW": "CWSTB2505", "Mã CS": "STB", "Tỷ lệ CĐ": "3:1", "Giá thực hiện": 60000, "Ngày đáo hạn": "2026-06-29", "Trạng thái": "Pre-listing"},
             {"Mã CW": "CWHPG2516", "Mã CS": "HPG", "Tỷ lệ CĐ": "4:1", "Giá thực hiện": 32000, "Ngày đáo hạn": "2026-12-28", "Trạng thái": "Pre-listing"},
@@ -127,12 +111,19 @@ class FinancialEngine:
         else: return "ATM (Ngang giá)", "orange"
 
 # ==========================================
-# 4. AI SERVICE LAYER (V12.5 - CLEAN PROMPT)
+# 4. AI SERVICE LAYER (V12.6 - HYBRID RESTORED)
 # ==========================================
 def process_image_with_gemini(image, api_key, mode="ALL"):
     genai.configure(api_key=api_key)
     generation_config = {"temperature": 0.0}
-    priority_models = ['gemini-3-flash-preview', 'gemini-2.0-flash-exp'] 
+    
+    # [RESTORED] Khôi phục danh sách Model đầy đủ để fallback an toàn
+    priority_models = [
+        'gemini-3-flash-preview', 
+        'gemini-2.0-flash-exp', 
+        'gemini-1.5-pro',  # <--- Rất quan trọng cho việc đọc biên lai khó
+        'gemini-1.5-flash'
+    ]
     
     if mode == "BUY_ORDER":
         task_desc = "Trích xuất thông tin LỆNH MUA / BIÊN LAI. Tập trung vào: Mã, Số lượng và Giá vốn (Giá khớp)."
@@ -141,12 +132,14 @@ def process_image_with_gemini(image, api_key, mode="ALL"):
     else:
         task_desc = "Trích xuất dữ liệu tài chính."
 
-    # --- PROMPT CHUẨN MỰC (GENERIC) ---
+    # [RESTORED] Prompt có ví dụ mẫu (nhưng không bias VHM)
     prompt = f"""
     Bạn là một trợ lý tài chính (OCR). Nhiệm vụ: {task_desc}
     
     Các trường cần tìm:
-    1. Mã chứng khoán (Symbol): Tìm mã Chứng quyền (thường bắt đầu bằng C...) hoặc mã Cơ sở (3 chữ cái in hoa).
+    1. Mã chứng khoán (Symbol): 
+       - Ưu tiên tìm mã Chứng quyền (ví dụ: CWVHM, CMWG, CVNM...). 
+       - Nếu không thấy, tìm mã Cơ sở (3 chữ cái in hoa như VHM, MWG).
     2. Số lượng (Qty): Khối lượng mua (Nếu là Bảng giá -> null).
     3. Giá vốn (Price): Giá khớp lệnh/Giá mua (Nếu là Bảng giá -> null).
     4. Giá thị trường (Market Price): Giá hiện tại/Khớp lệnh trên bảng điện (Nếu là Biên lai mua -> null).
@@ -164,8 +157,11 @@ def process_image_with_gemini(image, api_key, mode="ALL"):
             text = response.text.strip()
             
             start_idx = text.find('{')
-            if start_idx != -1:
-                json_data, _ = JSONDecoder().raw_decode(text[start_idx:])
+            end_idx = text.rfind('}') + 1 # [RESTORED] Kỹ thuật cắt chuỗi của bản cũ (an toàn hơn)
+            
+            if start_idx != -1 and end_idx != -1:
+                clean_json = text[start_idx:end_idx]
+                json_data = json.loads(clean_json) # Dùng json.loads chuẩn
                 json_data['_processed_by'] = model_name 
                 return json_data
             else:
@@ -231,7 +227,7 @@ def render_cw_profile(cw_code, und_code, exercise_price, ratio, maturity_date, d
 # ==========================================
 def main():
     st.title("🔶 LPBS CW Tracker & Simulator")
-    st.caption(f"System: V12.5 | Build: {build_time_str} | Clean & Secure (Full)")
+    st.caption(f"System: V12.6 | Build: {build_time_str} | Hybrid Restored")
 
     if 'ocr_result' not in st.session_state: st.session_state['ocr_result'] = None
     if 'user_qty' not in st.session_state: st.session_state['user_qty'] = 1000.0
@@ -264,7 +260,7 @@ def main():
                 
                 if uploaded_buy and active_key:
                     if st.button("🚀 Phân Tích", use_container_width=True):
-                        with st.spinner("Đang xử lý..."):
+                        with st.spinner("Đang xử lý (Fallback Enabled)..."):
                             image = Image.open(uploaded_buy)
                             result = process_image_with_gemini(image, active_key, mode="BUY_ORDER")
                             if "error" in result: st.error(result['error'])
@@ -276,6 +272,11 @@ def main():
                                     st.session_state['user_price'] = raw_p
                                 if result.get('qty'): st.session_state['user_qty'] = float(result['qty'])
                                 auto_map_symbol_and_rerun(result, master_df)
+                
+                # [RESTORED] Hiển thị Debug ngay tại đây để kiểm tra
+                if st.session_state['ocr_result']:
+                    with st.expander("🔍 Debug Info (Kết quả OCR)"):
+                        st.json(st.session_state['ocr_result'])
             
             else: # Mode Nhập Tay
                 st.info("Nhập liệu thủ công")
@@ -327,6 +328,11 @@ def main():
                                         auto_map_symbol_and_rerun(result, master_df)
                                     else:
                                         st.warning("Không tìm thấy giá.")
+                    
+                    if st.session_state['ocr_result'] and 'market_price' in st.session_state['ocr_result']:
+                         with st.expander("🔍 Debug Info"):
+                            st.json(st.session_state['ocr_result'])
+
                 else:
                     st.info(f"Chỉnh giá thị trường cho **{und_code}**")
                     new_price = st.number_input("Giá hiện tại (VND):", value=float(st.session_state[manual_key]), step=100.0, format="%.0f")
