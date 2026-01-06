@@ -11,10 +11,11 @@ from PIL import Image
 # ==========================================
 # 1. CONFIG & BRANDING
 # ==========================================
-st.set_page_config(page_title="LPBS CW Tracker", layout="wide", page_icon="🔶")
+st.set_page_config(page_title="LPBS CW Tracker - VH tự edit", layout="wide", page_icon="🔶")
 
-# UPDATE: Giờ chuẩn 19:00
-build_time_str = "19:00:00 - 05/01/2026" 
+# UPDATE: Giờ hiện tại
+vn_time = datetime.utcnow() + timedelta(hours=7)
+build_time_str = vn_time.strftime("%H:%M:%S - %d/%m/%Y")
 
 st.markdown("""
 <style>
@@ -84,16 +85,16 @@ class DataManager:
             {"Mã CW": "CMWG2519", "Mã CS": "MWG", "Tỷ lệ CĐ": "5:1", "Giá thực hiện": 88000, "Ngày đáo hạn": "2026-06-29", "Trạng thái": "Pre-listing"},
             {"Mã CW": "CWVHM2522", "Mã CS": "VHM", "Tỷ lệ CĐ": "10:1", "Giá thực hiện": 106000, "Ngày đáo hạn": "2026-12-28", "Trạng thái": "Pre-listing"},
             {"Mã CW": "CWSTB2505", "Mã CS": "STB", "Tỷ lệ CĐ": "3:1", "Giá thực hiện": 60000, "Ngày đáo hạn": "2026-06-29", "Trạng thái": "Pre-listing"},
-            {"Mã CW": "CHPG2516", "Mã CS": "HPG", "Tỷ lệ CĐ": "4:1", "Giá thực hiện": 32000, "Ngày đáo hạn": "2026-12-28", "Trạng thái": "Pre-listing"},
-            {"Mã CW": "CACB2502", "Mã CS": "ACB", "Tỷ lệ CĐ": "2:1", "Giá thực hiện": 28000, "Ngày đáo hạn": "2026-12-28", "Trạng thái": "Pre-listing"},
-            {"Mã CW": "CMBB2504", "Mã CS": "MBB", "Tỷ lệ CĐ": "2:1", "Giá thực hiện": 22000, "Ngày đáo hạn": "2026-12-28", "Trạng thái": "Pre-listing"},
-            {"Mã CW": "CMSN2518", "Mã CS": "MSN", "Tỷ lệ CĐ": "10:1", "Giá thực hiện": 95000, "Ngày đáo hạn": "2026-12-28", "Trạng thái": "Pre-listing"},
-            {"Mã CW": "CVNM2524", "Mã CS": "VNM", "Tỷ lệ CĐ": "8:1", "Giá thực hiện": 72000, "Ngày đáo hạn": "2026-12-28", "Trạng thái": "Pre-listing"},
-            {"Mã CW": "CSHB2525", "Mã CS": "SHB", "Tỷ lệ CĐ": "1:1", "Giá thực hiện": 12500, "Ngày đáo hạn": "2026-06-29", "Trạng thái": "Pre-listing"},
-            {"Mã CW": "CFPT2514", "Mã CS": "FPT", "Tỷ lệ CĐ": "8:1", "Giá thực hiện": 110000, "Ngày đáo hạn": "2026-12-28", "Trạng thái": "Pre-listing"},
-            {"Mã CW": "CTCB2507", "Mã CS": "TCB", "Tỷ lệ CĐ": "5:1", "Giá thực hiện": 45000, "Ngày đáo hạn": "2026-12-28", "Trạng thái": "Pre-listing"},
-            {"Mã CW": "CVPB2511", "Mã CS": "VPB", "Tỷ lệ CĐ": "3:1", "Giá thực hiện": 21500, "Ngày đáo hạn": "2026-12-28", "Trạng thái": "Pre-listing"},
-            {"Mã CW": "CVIB2510", "Mã CS": "VIB", "Tỷ lệ CĐ": "2:1", "Giá thực hiện": 23000, "Ngày đáo hạn": "2026-06-29", "Trạng thái": "Pre-listing"}
+            {"Mã CW": "CWHPG2516", "Mã CS": "HPG", "Tỷ lệ CĐ": "4:1", "Giá thực hiện": 32000, "Ngày đáo hạn": "2026-12-28", "Trạng thái": "Pre-listing"},
+            {"Mã CW": "CWACB2502", "Mã CS": "ACB", "Tỷ lệ CĐ": "2:1", "Giá thực hiện": 28000, "Ngày đáo hạn": "2026-12-28", "Trạng thái": "Pre-listing"},
+            {"Mã CW": "CWMBB2504", "Mã CS": "MBB", "Tỷ lệ CĐ": "2:1", "Giá thực hiện": 22000, "Ngày đáo hạn": "2026-12-28", "Trạng thái": "Pre-listing"},
+            {"Mã CW": "CWMSN2518", "Mã CS": "MSN", "Tỷ lệ CĐ": "10:1", "Giá thực hiện": 95000, "Ngày đáo hạn": "2026-12-28", "Trạng thái": "Pre-listing"},
+            {"Mã CW": "CWVNM2524", "Mã CS": "VNM", "Tỷ lệ CĐ": "8:1", "Giá thực hiện": 72000, "Ngày đáo hạn": "2026-12-28", "Trạng thái": "Pre-listing"},
+            {"Mã CW": "CWSHB2525", "Mã CS": "SHB", "Tỷ lệ CĐ": "1:1", "Giá thực hiện": 12500, "Ngày đáo hạn": "2026-06-29", "Trạng thái": "Pre-listing"},
+            {"Mã CW": "CWFPT2514", "Mã CS": "FPT", "Tỷ lệ CĐ": "8:1", "Giá thực hiện": 110000, "Ngày đáo hạn": "2026-12-28", "Trạng thái": "Pre-listing"},
+            {"Mã CW": "CWTCB2507", "Mã CS": "TCB", "Tỷ lệ CĐ": "5:1", "Giá thực hiện": 45000, "Ngày đáo hạn": "2026-12-28", "Trạng thái": "Pre-listing"},
+            {"Mã CW": "CWVPB2511", "Mã CS": "VPB", "Tỷ lệ CĐ": "3:1", "Giá thực hiện": 21500, "Ngày đáo hạn": "2026-12-28", "Trạng thái": "Pre-listing"},
+            {"Mã CW": "CWVIB2510", "Mã CS": "VIB", "Tỷ lệ CĐ": "2:1", "Giá thực hiện": 23000, "Ngày đáo hạn": "2026-06-29", "Trạng thái": "Pre-listing"}
         ]
         return pd.DataFrame(data)
 
@@ -155,16 +156,16 @@ def process_image_with_gemini(image, api_key):
         genai.configure(api_key=api_key)
         
         # --- FIX: DÙNG ĐÚNG MODEL GEMINI 3.0 PRO ---
-        model_name = 'gemini-3-pro-preview' 
+        model_name = 'gemini-3-flash-preview' 
         
         generation_config = genai.types.GenerationConfig(temperature=0.0)
         model = genai.GenerativeModel(model_name)
         
         prompt = """
         Bạn là một trợ lý nhập liệu tài chính (OCR). Nhiệm vụ:
-        1. Tìm chính xác Mã chứng khoán (CMWG..., CWVHM..., VHM, MWG...).
-           - Lưu ý: Chữ "W" và "V" rất dễ nhầm. Hãy nhìn kỹ ngữ cảnh. Mã CW thường bắt đầu bằng C (ví dụ CWVHM).
-        2. Tìm Số lượng và Giá.
+        1. Tìm chính xác Mã CW theo chứng khoán cơ sở (MWG..., VHM..., VHM, MWG...).
+           - Lưu ý: Chữ "W" và "V" rất dễ nhầm. Hãy nhìn kỹ ngữ cảnh. Mã CW thường bắt đầu bằng CW (ví dụ CWVHM).
+        2. Tìm Số lượng và Giá. Nếu thiếu thông tin giá thì tìm giá trị chuyển tiền và số lượng mua . Giá = giá trị/ số lượng.
         
         Yêu cầu: Trả về JSON thuần túy.
         Format: {"symbol": "XXX", "qty": 1000, "price": 50000}
@@ -184,7 +185,7 @@ def process_image_with_gemini(image, api_key):
     except Exception as e:
         # Nếu tài khoản Free chưa được cấp quyền 3.0, fallback về 2.0 Flash
         if "404" in str(e):
-             return {"error": f"Tài khoản của bạn chưa kích hoạt {model_name}. Hãy thử model 'gemini-2.0-flash-exp' hoặc kiểm tra lại Key."}
+             return {"error": f"Tài khoản của bạn chưa kích hoạt {model_name}. Hãy thử model 'gemini-flash-latest' hoặc kiểm tra lại Key."}
         return {"error": str(e)}
 
 # ==========================================
@@ -220,7 +221,7 @@ def render_cw_profile(cw_code, und_code, exercise_price, ratio, maturity_date, d
 # ==========================================
 def main():
     st.title("🔶 LPBS CW Tracker & Simulator")
-    st.caption(f"System: V9.6 | Build: {build_time_str} | Gemini 3.0 Pro (Fixed)")
+    st.caption(f"System: V9.6 | Build: {build_time_str} | Gemini 3.0 Flash (Fixed)")
 
     if 'ocr_result' not in st.session_state:
         st.session_state['ocr_result'] = None
@@ -236,7 +237,7 @@ def main():
         
         if uploaded_img and api_key:
             if st.button("🚀 Phân tích ngay"):
-                with st.spinner("Gemini 3.0 Pro đang xử lý..."):
+                with st.spinner(" Đang xử lý..."):
                     image = Image.open(uploaded_img)
                     result = process_image_with_gemini(image, api_key)
                     
