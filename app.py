@@ -92,14 +92,15 @@ class FinancialEngine:
         else: return "ATM (Ngang giá)", "orange"
 
 # ==========================================
-# 4. AI SERVICE LAYER (V11.5 - SIMPLE PARSING)
+# 4. AI SERVICE LAYER (V11.6 - ROBUST CORE)
 # ==========================================
 def process_image_with_gemini(image, api_key):
     genai.configure(api_key=api_key)
-    generation_config = genai.types.GenerationConfig(temperature=0.0)
     
-    # Priority Models (3.0 First)
-    priority_models = ['gemini-3-flash-preview', 'gemini-3-pro-preview', 'gemini-flash-latest']
+    # [FIX 1] Dùng Dictionary thay vì Object để tránh lỗi 'list indices...' ở model 3.0
+    generation_config = {"temperature": 0.0}
+    
+    priority_models = ['gemini-3-flash-preview', 'gemini-1.5-pro', 'gemini-1.5-flash']
     
     prompt = """
     Bạn là một trợ lý tài chính (OCR). Nhiệm vụ: Trích xuất dữ liệu từ ảnh (Biên lai, Danh mục, hoặc Bảng giá/Popup).
@@ -122,13 +123,19 @@ def process_image_with_gemini(image, api_key):
             response = model.generate_content([prompt, image], generation_config=generation_config)
             text = response.text.strip()
             
-            # --- SIMPLE PARSING (User's Way) ---
-            # Chỉ loại bỏ các ký tự thừa, không dùng Regex phức tạp
-            cleaned_text = text.replace("```json", "").replace("```", "").strip()
+            # [FIX 2] Thuật toán "Cắt Lấy Nhân" (Tìm { và })
+            # Cách này bền hơn .replace vì nó lọc sạch mọi rác ở đầu/cuối
+            start_idx = text.find('{')
+            end_idx = text.rfind('}') + 1
             
-            json_data = json.loads(cleaned_text)
-            json_data['_processed_by'] = model_name 
-            return json_data # Success
+            if start_idx != -1 and end_idx != -1:
+                clean_json = text[start_idx:end_idx]
+                json_data = json.loads(clean_json)
+                json_data['_processed_by'] = model_name 
+                return json_data
+            else:
+                errors_log.append(f"{model_name}: Không tìm thấy JSON trong phản hồi.")
+                continue
                 
         except Exception as e:
             errors_log.append(f"{model_name}: {str(e)}")
@@ -169,7 +176,7 @@ def render_cw_profile(cw_code, und_code, exercise_price, ratio, maturity_date, d
 # ==========================================
 def main():
     st.title("🔶 LPBS CW Tracker & Simulator")
-    st.caption(f"System: V11.5 | Build: {build_time_str} | Simple Parser Restored")
+    st.caption(f"System: V11.6 | Build: {build_time_str} | Robust Fix")
 
     if 'ocr_result' not in st.session_state: st.session_state['ocr_result'] = None
     if 'user_qty' not in st.session_state: st.session_state['user_qty'] = 1000.0
