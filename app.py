@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 import re
 import google.generativeai as genai
 import json
+from json import JSONDecoder # <--- THÊM CÔNG CỤ MỚI
 from datetime import datetime, timedelta
 from PIL import Image
 
@@ -92,15 +93,15 @@ class FinancialEngine:
         else: return "ATM (Ngang giá)", "orange"
 
 # ==========================================
-# 4. AI SERVICE LAYER (V11.6 - ROBUST CORE)
+# 4. AI SERVICE LAYER (V11.7 - DECODER FIX)
 # ==========================================
 def process_image_with_gemini(image, api_key):
     genai.configure(api_key=api_key)
-    
-    # [FIX 1] Dùng Dictionary thay vì Object để tránh lỗi 'list indices...' ở model 3.0
     generation_config = {"temperature": 0.0}
     
-    priority_models = ['gemini-3-flash-preview', 'gemini-1.5-pro', 'gemini-1.5-flash']
+    # Chỉ giữ lại Model 3.0 vì các model 1.5 của bạn đang bị lỗi 404
+    # Nếu 3.0 lỗi, ta chấp nhận lỗi để debug, không fallback sang model chết
+    priority_models = ['gemini-3-flash-preview', 'gemini-2.0-flash-exp'] 
     
     prompt = """
     Bạn là một trợ lý tài chính (OCR). Nhiệm vụ: Trích xuất dữ liệu từ ảnh (Biên lai, Danh mục, hoặc Bảng giá/Popup).
@@ -123,18 +124,17 @@ def process_image_with_gemini(image, api_key):
             response = model.generate_content([prompt, image], generation_config=generation_config)
             text = response.text.strip()
             
-            # [FIX 2] Thuật toán "Cắt Lấy Nhân" (Tìm { và })
-            # Cách này bền hơn .replace vì nó lọc sạch mọi rác ở đầu/cuối
+            # [FIX 3 - FINAL] Dùng raw_decode để "Đọc xong là dừng"
+            # Bước 1: Tìm dấu { đầu tiên
             start_idx = text.find('{')
-            end_idx = text.rfind('}') + 1
-            
-            if start_idx != -1 and end_idx != -1:
-                clean_json = text[start_idx:end_idx]
-                json_data = json.loads(clean_json)
+            if start_idx != -1:
+                # Bước 2: Dùng bộ giải mã chuẩn của Python
+                # Nó sẽ tự động dừng ngay khi hết JSON, bất chấp phía sau có gì
+                json_data, _ = JSONDecoder().raw_decode(text[start_idx:])
                 json_data['_processed_by'] = model_name 
                 return json_data
             else:
-                errors_log.append(f"{model_name}: Không tìm thấy JSON trong phản hồi.")
+                errors_log.append(f"{model_name}: Không tìm thấy JSON (No brackets).")
                 continue
                 
         except Exception as e:
@@ -176,7 +176,7 @@ def render_cw_profile(cw_code, und_code, exercise_price, ratio, maturity_date, d
 # ==========================================
 def main():
     st.title("🔶 LPBS CW Tracker & Simulator")
-    st.caption(f"System: V11.6 | Build: {build_time_str} | Robust Fix")
+    st.caption(f"System: V11.7 | Build: {build_time_str} | Decoder Fix (Final)")
 
     if 'ocr_result' not in st.session_state: st.session_state['ocr_result'] = None
     if 'user_qty' not in st.session_state: st.session_state['user_qty'] = 1000.0
