@@ -17,7 +17,7 @@ st.set_page_config(page_title="LPBS CW Tracker & Simulator", layout="wide", page
 vn_time = datetime.utcnow() + timedelta(hours=7)
 build_time_str = vn_time.strftime("%H:%M:%S - %d/%m/%Y")
 
-# --- SECURITY: SECRETS ONLY ---
+# --- SECURITY ---
 if "GEMINI_API_KEY" in st.secrets:
     SYSTEM_API_KEY = st.secrets["GEMINI_API_KEY"]
 else:
@@ -27,12 +27,7 @@ st.markdown("""
 <style>
     .main { background-color: #FAFAFA; }
     h1, h2, h3 { color: #5D4037 !important; font-family: 'Segoe UI', sans-serif; }
-    
-    [data-testid="stSidebar"] {
-        background-color: #FFF8E1;
-        border-right: 1px solid #FFECB3;
-    }
-    
+    [data-testid="stSidebar"] { background-color: #FFF8E1; border-right: 1px solid #FFECB3; }
     .stTabs [data-baseweb="tab-list"] { gap: 8px; }
     .stTabs [data-baseweb="tab"] {
         height: 45px; background-color: #FFF; border-radius: 6px; 
@@ -41,22 +36,12 @@ st.markdown("""
     .stTabs [aria-selected="true"] {
         background-color: #FF8F00 !important; color: white !important; border-color: #FF8F00;
     }
-    
     .stRadio [role="radiogroup"] {
         background-color: #FFF; padding: 10px; border-radius: 8px;
         border: 1px solid #EEE; justify-content: center;
     }
-
-    .metric-card {
-        background: white; padding: 20px; border-radius: 12px; 
-        border: 1px solid #EEE; border-left: 5px solid #FF8F00;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05); color: #4E342E; margin-bottom: 15px;
-    }
-    
-    .cw-profile-box {
-        background-color: #E3F2FD; border: 1px solid #90CAF9;
-        border-radius: 10px; padding: 15px; margin-bottom: 20px; color: #0D47A1;
-    }
+    .metric-card { background: white; padding: 20px; border-radius: 12px; border: 1px solid #EEE; border-left: 5px solid #FF8F00; box-shadow: 0 4px 6px rgba(0,0,0,0.05); color: #4E342E; margin-bottom: 15px; }
+    .cw-profile-box { background-color: #E3F2FD; border: 1px solid #90CAF9; border-radius: 10px; padding: 15px; margin-bottom: 20px; color: #0D47A1; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -126,33 +111,30 @@ class FinancialEngine:
         else: return "ATM (Ngang giá)", "orange"
 
 # ==========================================
-# 4. AI SERVICE LAYER (V12.7 - RAW DECODE FIX)
+# 4. AI SERVICE LAYER (V12.8 - CALCULATION ENABLED)
 # ==========================================
 def process_image_with_gemini(image, api_key, mode="ALL"):
     genai.configure(api_key=api_key)
     generation_config = {"temperature": 0.0}
-    
-    # [FIX 1] Loại bỏ các model gây lỗi 404, ưu tiên model ổn định
-    priority_models = [
-        'gemini-2.0-flash-exp',  # Model mới, thông minh
-        'gemini-1.5-flash'       # Model nhẹ, fallback tốt
-    ]
+    priority_models = ['gemini-2.0-flash-exp', 'gemini-1.5-flash'] 
     
     if mode == "BUY_ORDER":
-        task_desc = "Trích xuất thông tin LỆNH MUA / BIÊN LAI. Tập trung vào: Mã, Số lượng và Giá vốn (Giá khớp)."
+        task_desc = "Trích xuất thông tin LỆNH MUA / BIÊN LAI. Tập trung vào: Mã, Số lượng và Giá vốn."
     elif mode == "MARKET_BOARD":
         task_desc = "Trích xuất thông tin BẢNG GIÁ / CAFEF. Tập trung vào: Mã và Giá thị trường (Cột Last/Current)."
     else:
         task_desc = "Trích xuất dữ liệu tài chính."
 
-    # [FIX 2] Prompt sạch, không bias VHM
+    # [UPDATE V12.8] Thêm hướng dẫn tính toán giá vốn
     prompt = f"""
     Bạn là một trợ lý tài chính (OCR). Nhiệm vụ: {task_desc}
     
     Các trường cần tìm:
     1. Mã chứng khoán (Symbol): Tìm mã Chứng quyền (thường bắt đầu bằng C...) hoặc mã Cơ sở (3 chữ cái in hoa).
     2. Số lượng (Qty): Khối lượng mua (Nếu là Bảng giá -> null).
-    3. Giá vốn (Price): Giá khớp lệnh/Giá mua (Nếu là Bảng giá -> null).
+    3. Giá vốn (Price): 
+       - Nếu thấy "Đơn giá" hoặc "Giá khớp": Lấy giá đó.
+       - Nếu KHÔNG thấy giá, hãy TÍNH TOÁN: Price = Tổng số tiền / Số lượng. (Ví dụ: 65000000 / 30000 = 2166).
     4. Giá thị trường (Market Price): Giá hiện tại/Khớp lệnh trên bảng điện (Nếu là Biên lai mua -> null).
 
     Trả về JSON (chỉ số): 
@@ -167,12 +149,10 @@ def process_image_with_gemini(image, api_key, mode="ALL"):
             response = model.generate_content([prompt, image], generation_config=generation_config)
             text = response.text.strip()
             
-            # [FIX 3 - QUAN TRỌNG NHẤT] Dùng raw_decode để xử lý "Extra Data"
+            # Raw Decode (Stable Parser)
             start_idx = text.find('{')
             if start_idx != -1:
                 try:
-                    # raw_decode trả về (obj, end_index)
-                    # Nó sẽ dừng ngay khi đọc xong 1 JSON hợp lệ
                     json_data, _ = JSONDecoder().raw_decode(text[start_idx:])
                     json_data['_processed_by'] = model_name 
                     return json_data
@@ -242,7 +222,7 @@ def render_cw_profile(cw_code, und_code, exercise_price, ratio, maturity_date, d
 # ==========================================
 def main():
     st.title("🔶 LPBS CW Tracker & Simulator")
-    st.caption(f"System: V12.7 | Build: {build_time_str} | Raw Decode Parser")
+    st.caption(f"System: V12.8 | Build: {build_time_str} | Smart Calculation")
 
     if 'ocr_result' not in st.session_state: st.session_state['ocr_result'] = None
     if 'user_qty' not in st.session_state: st.session_state['user_qty'] = 1000.0
@@ -266,7 +246,6 @@ def main():
         
         tab_buy, tab_market = st.tabs(["1️⃣ VỊ THẾ", "2️⃣ GIÁ & P/L"])
 
-        # --- TAB 1 ---
         with tab_buy:
             mode_t1 = st.radio("Chế độ:", ["📸 Quét OCR", "✍️ Nhập Tay"], horizontal=True, label_visibility="collapsed")
 
@@ -276,7 +255,7 @@ def main():
                 
                 if uploaded_buy and active_key:
                     if st.button("🚀 Phân Tích", use_container_width=True):
-                        with st.spinner("Đang xử lý..."):
+                        with st.spinner("Đang xử lý (Auto Calc)..."):
                             image = Image.open(uploaded_buy)
                             result = process_image_with_gemini(image, active_key, mode="BUY_ORDER")
                             if "error" in result: st.error(result['error'])
@@ -290,7 +269,7 @@ def main():
                                 auto_map_symbol_and_rerun(result, master_df)
                 
                 if st.session_state['ocr_result']:
-                    with st.expander("🔍 Debug Info (Lệnh Mua)"):
+                    with st.expander("🔍 Debug Info"):
                         st.json(st.session_state['ocr_result'])
             
             else: 
@@ -309,7 +288,6 @@ def main():
                     st.session_state['user_index'] = new_index
                     st.rerun()
 
-        # --- TAB 2 ---
         with tab_market:
             if not has_position:
                 st.error("⛔ CHƯA CÓ VỊ THẾ")
@@ -346,7 +324,7 @@ def main():
                                         st.warning("Không tìm thấy giá.")
                     
                     if st.session_state['ocr_result'] and 'market_price' in st.session_state['ocr_result']:
-                         with st.expander("🔍 Debug Info (Bảng Giá)"):
+                         with st.expander("🔍 Debug Info"):
                             st.json(st.session_state['ocr_result'])
 
                 else:
