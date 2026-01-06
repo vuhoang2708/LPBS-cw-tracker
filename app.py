@@ -151,44 +151,58 @@ class FinancialEngine:
 # ==========================================
 # 4. AI SERVICE LAYER (V9.6 - GEMINI 3.0 PRO)
 # ==========================================
-def process_image_with_gemini(image, api_key):
-    try:
-        genai.configure(api_key=api_key)
-        
-        # --- FIX: DÙNG ĐÚNG MODEL GEMINI 3.0 PRO ---
-        model_name = 'gemini-3-flash-preview' 
-        
-        generation_config = genai.types.GenerationConfig(temperature=0.0)
-        model = genai.GenerativeModel(model_name)
-        
-        prompt = """
-        Bạn là một trợ lý nhập liệu tài chính (OCR). Nhiệm vụ:
-        1. Tìm chính xác Mã CW theo chứng khoán cơ sở (MWG..., VHM..., VHM, MWG...).
-           - Lưu ý: Chữ "W" và "V" rất dễ nhầm. Hãy nhìn kỹ ngữ cảnh. Mã CW thường bắt đầu bằng CW (ví dụ CWVHM).
-        2. Tìm Số lượng và Giá. Nếu thiếu thông tin giá thì tìm giá trị chuyển tiền và số lượng mua . Giá = giá trị/ số lượng.
-        
-        Yêu cầu: Trả về JSON thuần túy.
-        Format: {"symbol": "XXX", "qty": 1000, "price": 50000}
-        """
-        
-        response = model.generate_content([prompt, image], generation_config=generation_config)
-        text = response.text.strip()
-        
-        # --- JSON PARSING BẰNG REGEX (GIỮ NGUYÊN) ---
-        match = re.search(r'\{.*\}', text, re.DOTALL)
-        if match:
-            json_str = match.group(0)
-            return json.loads(json_str)
-        else:
-            return {"error": "AI không trả về dữ liệu JSON hợp lệ."}
-            
-    except Exception as e:
-        # Nếu tài khoản Free chưa được cấp quyền 3.0, fallback về 2.0 Flash
-        if "404" in str(e):
-             return {"error": f"Tài khoản của bạn chưa kích hoạt {model_name}. Hãy thử model 'gemini-flash-latest' hoặc kiểm tra lại Key."}
-        return {"error": str(e)}
-
 # ==========================================
+# 4. AI SERVICE LAYER (MERGED: User Prompt + Auto-Fallback)
+# ==========================================
+def process_image_with_gemini(image, api_key):
+    genai.configure(api_key=api_key)
+    generation_config = genai.types.GenerationConfig(temperature=0.0)
+    
+    # --- CẤU HÌNH AUTO-FALLBACK ---
+    # Ưu tiên 1: Model bạn muốn dùng (3.0 Preview)
+    # Ưu tiên 2 & 3: Các model ổn định (Backup nếu cái đầu bị lỗi 404/Limit)
+    priority_models = ['gemini-3-flash-preview', 'gemini-flash-latest', 'gemini-1.5-flash']
+    
+    # --- PROMPT CỦA BẠN (GIỮ NGUYÊN) ---
+    prompt = """
+    Bạn là một trợ lý nhập liệu tài chính (OCR). Nhiệm vụ:
+    1. Tìm chính xác Mã CW theo chứng khoán cơ sở (MWG..., VHM..., VHM, MWG...).
+       - Lưu ý: Chữ "W" và "V" rất dễ nhầm. Hãy nhìn kỹ ngữ cảnh. Mã CW thường bắt đầu bằng CW (ví dụ CWVHM).
+    2. Tìm Số lượng và Giá. Nếu thiếu thông tin giá thì tìm giá trị và số lượng mua . Giá = giá trị/ số lượng.
+    
+    Yêu cầu: Trả về JSON thuần túy.
+    Format: {"symbol": "XXX", "qty": 1000, "price": 50000}
+    """
+    
+    last_error = ""
+
+    # VÒNG LẶP XỬ LÝ (Thử lần lượt từng model)
+    for model_name in priority_models:
+        try:
+            # Khởi tạo model hiện tại trong vòng lặp
+            model = genai.GenerativeModel(model_name)
+            
+            # Gọi API
+            response = model.generate_content([prompt, image], generation_config=generation_config)
+            text = response.text.strip()
+            
+            # --- XỬ LÝ KẾT QUẢ (Regex Cleaner) ---
+            match = re.search(r'\{.*\}', text, re.DOTALL)
+            if match:
+                json_data = json.loads(match.group(0))
+                # (Optional) Ghi chú lại model nào đã chạy thành công để bạn biết
+                json_data['_processed_by'] = model_name 
+                return json_data
+            else:
+                last_error = f"Model {model_name} trả về sai định dạng."
+                continue # Thử model tiếp theo
+                
+        except Exception as e:
+            last_error = f"Lỗi với {model_name}: {str(e)}"
+            continue # Thử model tiếp theo
+            
+    # Nếu chạy hết cả 3 model mà vẫn lỗi thì mới đầu hàng
+    return {"error": f"Tất cả model đều thất bại. Lỗi cuối: {last_error}"}# ==========================================
 # 5. UI HELPER
 # ==========================================
 def render_metric_card(label, value, sub="", color="black"):
