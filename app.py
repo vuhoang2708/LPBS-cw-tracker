@@ -52,7 +52,7 @@ class DataManager:
     @staticmethod
     def get_default_master_data():
         data = [
-            {"Mã CW": "CMWG2519", "Mã CS": "MWG", "Tỷ lệ CĐ": "5:1", "Giá thực hiện": 88000, "Ngày đáo hạn": "2026-06-29", "Trạng thái": "Pre-listing"},
+            {"Mã CW": "CWMWG2519", "Mã CS": "MWG", "Tỷ lệ CĐ": "5:1", "Giá thực hiện": 88000, "Ngày đáo hạn": "2026-06-29", "Trạng thái": "Pre-listing"},
             {"Mã CW": "CWVHM2522", "Mã CS": "VHM", "Tỷ lệ CĐ": "10:1", "Giá thực hiện": 106000, "Ngày đáo hạn": "2026-12-28", "Trạng thái": "Pre-listing"},
             {"Mã CW": "CWSTB2505", "Mã CS": "STB", "Tỷ lệ CĐ": "3:1", "Giá thực hiện": 60000, "Ngày đáo hạn": "2026-06-29", "Trạng thái": "Pre-listing"},
             {"Mã CW": "CWHPG2516", "Mã CS": "HPG", "Tỷ lệ CĐ": "4:1", "Giá thực hiện": 32000, "Ngày đáo hạn": "2026-12-28", "Trạng thái": "Pre-listing"},
@@ -111,12 +111,19 @@ class FinancialEngine:
         else: return "ATM (Ngang giá)", "orange"
 
 # ==========================================
-# 4. AI SERVICE LAYER (V12.8 - CALCULATION ENABLED)
+# 4. AI SERVICE LAYER (V12.9 - FULL ROSTER)
 # ==========================================
 def process_image_with_gemini(image, api_key, mode="ALL"):
     genai.configure(api_key=api_key)
     generation_config = {"temperature": 0.0}
-    priority_models = ['gemini-2.0-flash-exp', 'gemini-1.5-flash'] 
+    
+    # [RESTORED] Biệt đội đầy đủ - Chấp nhận lỗi để tìm người tài
+    priority_models = [
+        'gemini-3-flash-preview', # Đã có raw_decode bảo kê
+'gemini-2.0-flash-exp', 
+                'gemini-3-pro-preview',         # Fallback mạnh
+        'gemini-1.5-flash'        # Chốt chặn cuối
+    ]
     
     if mode == "BUY_ORDER":
         task_desc = "Trích xuất thông tin LỆNH MUA / BIÊN LAI. Tập trung vào: Mã, Số lượng và Giá vốn."
@@ -125,7 +132,7 @@ def process_image_with_gemini(image, api_key, mode="ALL"):
     else:
         task_desc = "Trích xuất dữ liệu tài chính."
 
-    # [UPDATE V12.8] Thêm hướng dẫn tính toán giá vốn
+    # Prompt thông minh (Có tính toán)
     prompt = f"""
     Bạn là một trợ lý tài chính (OCR). Nhiệm vụ: {task_desc}
     
@@ -134,7 +141,7 @@ def process_image_with_gemini(image, api_key, mode="ALL"):
     2. Số lượng (Qty): Khối lượng mua (Nếu là Bảng giá -> null).
     3. Giá vốn (Price): 
        - Nếu thấy "Đơn giá" hoặc "Giá khớp": Lấy giá đó.
-       - Nếu KHÔNG thấy giá, hãy TÍNH TOÁN: Price = Tổng số tiền / Số lượng. (Ví dụ: 65000000 / 30000 = 2166).
+       - Nếu KHÔNG thấy giá, hãy TÍNH TOÁN: Price = Tổng số tiền / Số lượng.
     4. Giá thị trường (Market Price): Giá hiện tại/Khớp lệnh trên bảng điện (Nếu là Biên lai mua -> null).
 
     Trả về JSON (chỉ số): 
@@ -149,7 +156,7 @@ def process_image_with_gemini(image, api_key, mode="ALL"):
             response = model.generate_content([prompt, image], generation_config=generation_config)
             text = response.text.strip()
             
-            # Raw Decode (Stable Parser)
+            # Raw Decode - Chìa khóa để dùng lại Model 3.0
             start_idx = text.find('{')
             if start_idx != -1:
                 try:
@@ -222,7 +229,7 @@ def render_cw_profile(cw_code, und_code, exercise_price, ratio, maturity_date, d
 # ==========================================
 def main():
     st.title("🔶 LPBS CW Tracker & Simulator")
-    st.caption(f"System: V12.8 | Build: {build_time_str} | Smart Calculation")
+    st.caption(f"System: V12.9 | Build: {build_time_str} | Full Power Models")
 
     if 'ocr_result' not in st.session_state: st.session_state['ocr_result'] = None
     if 'user_qty' not in st.session_state: st.session_state['user_qty'] = 1000.0
