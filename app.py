@@ -13,7 +13,6 @@ from PIL import Image
 # ==========================================
 st.set_page_config(page_title="LPBS CW Tracker & Simulator", layout="wide", page_icon="🔶")
 
-# Dùng giờ động (Real-time) theo ý bạn để biết code đang chạy lúc nào
 vn_time = datetime.utcnow() + timedelta(hours=7)
 build_time_str = vn_time.strftime("%H:%M:%S - %d/%m/%Y")
 
@@ -75,12 +74,12 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. DATA LAYER (Dữ liệu chuẩn do bạn cung cấp)
+# 2. DATA LAYER (Dữ liệu của bạn)
 # ==========================================
 class DataManager:
     @staticmethod
     def get_default_master_data():
-        """Dữ liệu lõi 13 mã CW mới nhất của LPBS - Đã chuẩn hóa mã CW"""
+        """Dữ liệu lõi 13 mã CW mới nhất của LPBS"""
         data = [
             {"Mã CW": "CMWG2519", "Mã CS": "MWG", "Tỷ lệ CĐ": "5:1", "Giá thực hiện": 88000, "Ngày đáo hạn": "2026-06-29", "Trạng thái": "Pre-listing"},
             {"Mã CW": "CWVHM2522", "Mã CS": "VHM", "Tỷ lệ CĐ": "10:1", "Giá thực hiện": 106000, "Ngày đáo hạn": "2026-12-28", "Trạng thái": "Pre-listing"},
@@ -99,7 +98,8 @@ class DataManager:
         return pd.DataFrame(data)
 
     @staticmethod
-    def get_realtime_price(symbol):
+    def get_realtime_price_simulated(symbol):
+        """Giả lập giá nền"""
         base_prices = {
             "HPG": 28500, "MWG": 48200, "VHM": 41800, "STB": 30500, "VNM": 66000,
             "FPT": 95000, "MBB": 18500, "TCB": 33000, "VPB": 19200, "MSN": 62000,
@@ -149,54 +149,43 @@ class FinancialEngine:
             return "ATM (Ngang giá)", "orange"
 
 # ==========================================
-# 4. AI SERVICE LAYER (V10.1 - MERGED: FALLBACK + USER DATA)
+# 4. AI SERVICE LAYER (V11.3 - PARTIAL SCAN)
 # ==========================================
 def process_image_with_gemini(image, api_key):
     genai.configure(api_key=api_key)
     generation_config = genai.types.GenerationConfig(temperature=0.0)
-    
-    # --- CƠ CHẾ BẢO VỆ 3 LỚP (AUTO-FALLBACK) ---
-    # 1. Thử model mới nhất (3.0 Flash Preview)
-    # 2. Nếu lỗi -> Thử model thông minh nhất (1.5 Pro)
-    # 3. Nếu vẫn lỗi -> Thử model nhanh nhất (1.5 Flash)
     priority_models = ['gemini-3-flash-preview', 'gemini-1.5-pro', 'gemini-1.5-flash']
     
-    # --- PROMPT THÔNG MINH CỦA BẠN ---
     prompt = """
-    Bạn là một trợ lý nhập liệu tài chính (OCR). Nhiệm vụ:
-    1. Tìm chính xác Mã CW theo chứng khoán cơ sở (MWG..., VHM..., VHM, MWG...).
-       - Lưu ý: Chữ "W" và "V" rất dễ nhầm. Hãy nhìn kỹ ngữ cảnh. Mã CW thường bắt đầu bằng CW (ví dụ CWVHM).
-    2. Tìm Số lượng và Giá. Nếu thiếu thông tin giá thì tìm giá trị chuyển tiền và số lượng mua. Giá = giá trị / số lượng.
-    
-    Yêu cầu: Trả về JSON thuần túy.
-    Format: {"symbol": "XXX", "qty": 1000, "price": 50000}
+    Bạn là một trợ lý tài chính (OCR). Hãy trích xuất thông tin từ ảnh:
+    1. Mã chứng khoán (Symbol): Bắt đầu bằng CW (ví dụ CWVHM, CMWG...).
+    2. Số lượng (Qty): Khối lượng mua/nắm giữ (nếu có).
+    3. Giá vốn/Giá mua (Buy Price): Giá trung bình hoặc giá khớp lệnh (nếu có).
+       - Lưu ý: Bảng giá (Price Board) sẽ KHÔNG có giá này -> Trả về null.
+    4. Giá thị trường (Market Price): Cột "Giá hiện tại", "Last", "Khớp lệnh" (nếu có).
+
+    Format JSON: 
+    {"symbol": "XXX", "qty": 1000, "price": 50000, "market_price": 52000}
+    (Nếu không tìm thấy trường nào, hãy để null, đừng bịa số)
     """
     
     last_error = ""
-
-    # VÒNG LẶP XỬ LÝ
     for model_name in priority_models:
         try:
             model = genai.GenerativeModel(model_name)
             response = model.generate_content([prompt, image], generation_config=generation_config)
             text = response.text.strip()
-            
-            # Regex Cleaner (Lọc JSON chuẩn)
             match = re.search(r'\{.*\}', text, re.DOTALL)
             if match:
                 json_data = json.loads(match.group(0))
-                # Đánh dấu model nào đã xử lý thành công để biết
                 json_data['_processed_by'] = model_name 
                 return json_data
             else:
                 last_error = f"Model {model_name} trả về sai định dạng."
-                continue # Thử model tiếp theo
-                
+                continue 
         except Exception as e:
             last_error = f"Lỗi với {model_name}: {str(e)}"
-            continue # Thử model tiếp theo
-            
-    # Nếu cả 3 model đều bó tay
+            continue 
     return {"error": f"Tất cả model đều thất bại. Lỗi cuối: {last_error}"}
 
 # ==========================================
@@ -232,10 +221,15 @@ def render_cw_profile(cw_code, und_code, exercise_price, ratio, maturity_date, d
 # ==========================================
 def main():
     st.title("🔶 LPBS CW Tracker & Simulator")
-    st.caption(f"System: V10.1 | Build: {build_time_str} | Gemini Merged Core")
+    st.caption(f"System: V11.3 | Build: {build_time_str} | Smart Partial Update")
 
     if 'ocr_result' not in st.session_state:
         st.session_state['ocr_result'] = None
+
+    # --- SESSIONS CHO INPUT TAY ---
+    if 'user_qty' not in st.session_state: st.session_state['user_qty'] = 1000.0
+    if 'user_price' not in st.session_state: st.session_state['user_price'] = 1000.0
+    if 'user_index' not in st.session_state: st.session_state['user_index'] = 0
 
     # --- SIDEBAR ---
     with st.sidebar:
@@ -244,21 +238,38 @@ def main():
             st.markdown("[👉 Lấy Key miễn phí](https://aistudio.google.com/app/apikey)")
 
         st.header("📸 AI Quét Lệnh")
-        uploaded_img = st.file_uploader("Tải ảnh biên lai/SMS", type=["png", "jpg", "jpeg"])
+        uploaded_img = st.file_uploader("Tải ảnh biên lai/SMS/Bảng giá", type=["png", "jpg", "jpeg"])
         
         if uploaded_img and api_key:
             if st.button("🚀 Phân tích ngay"):
-                with st.spinner("Đang xử lý (Cơ chế Auto-Fallback)..."):
+                with st.spinner("Đang tìm dữ liệu khả dụng..."):
                     image = Image.open(uploaded_img)
                     result = process_image_with_gemini(image, api_key)
-                    
-                    if "error" in result: 
-                        st.error(f"Lỗi AI: {result['error']}")
+                    if "error" in result: st.error(result['error'])
                     else: 
                         st.session_state['ocr_result'] = result
-                        model_used = result.get('_processed_by', 'Unknown')
-                        st.toast(f"✅ Xử lý thành công bởi: {model_used}")
-            
+                        # --- LOGIC XỬ LÝ KẾT QUẢ THÔNG MINH ---
+                        msg_parts = []
+                        if result.get('symbol'): msg_parts.append(f"Mã: {result['symbol']}")
+                        
+                        # 1. Cập nhật Số lượng & Giá vốn (Chỉ khi có dữ liệu)
+                        if result.get('qty'): 
+                            st.session_state['user_qty'] = float(result['qty'])
+                            msg_parts.append("SL ✅")
+                        if result.get('price'): 
+                            st.session_state['user_price'] = float(result['price'])
+                            msg_parts.append("Giá vốn ✅")
+                        else:
+                            msg_parts.append("Giá vốn ❌ (Giữ cũ)")
+
+                        # 2. Cập nhật Giá thị trường (Nếu có)
+                        if result.get('market_price'):
+                            # Lưu vào biến tạm để lát nữa update vào ô manual_price
+                            st.session_state['temp_ocr_market_price'] = float(result['market_price'])
+                            msg_parts.append(f"Giá TT: {result['market_price']:,.0f}")
+                        
+                        st.toast(" | ".join(msg_parts))
+
             if st.session_state['ocr_result']:
                 with st.expander("👁️ Debug Info", expanded=True):
                     st.json(st.session_state['ocr_result'])
@@ -270,35 +281,22 @@ def main():
             master_df["Giá thực hiện"] = master_df["Giá thực hiện"].apply(DataManager.clean_number_value)
             master_df["Tỷ lệ CĐ"] = master_df["Tỷ lệ CĐ"].apply(DataManager.clean_number_value)
 
-        default_qty, default_price, default_index = 1000.0, 1000.0, 0
-        
+        # Logic chọn mã từ OCR
         if st.session_state['ocr_result']:
             res = st.session_state['ocr_result']
-            if res.get('qty'): default_qty = float(res['qty'])
-            if res.get('price'): default_price = float(res['price'])
-            
             det_sym = str(res.get('symbol', '')).upper().strip()
             if det_sym:
                 mask_exact = master_df['Mã CW'] == det_sym
                 mask_contains = master_df['Mã CW'].str.contains(det_sym) | master_df['Mã CS'].str.contains(det_sym)
-                
-                core_sym = re.sub(r'[^A-Z]', '', det_sym) 
-                core_sym = core_sym.replace("CW", "").replace("CV", "") 
+                core_sym = re.sub(r'[^A-Z]', '', det_sym).replace("CW", "").replace("CV", "")
                 mask_core = master_df['Mã CS'].str.contains(core_sym) if len(core_sym) >= 3 else mask_contains
 
-                if mask_exact.any():
-                    default_index = master_df.index[mask_exact].tolist()[0]
-                    st.toast(f"✅ AI Found: {det_sym}")
-                elif mask_core.any():
-                    default_index = master_df.index[mask_core].tolist()[0]
-                    found_code = master_df.iloc[default_index]['Mã CW']
-                    st.toast(f"⚠️ Smart Mapping: '{det_sym}' -> '{found_code}'")
-                else:
-                    st.error(f"❌ Not Found: '{det_sym}'")
+                if mask_exact.any(): st.session_state['user_index'] = master_df.index[mask_exact].tolist()[0]
+                elif mask_core.any(): st.session_state['user_index'] = master_df.index[mask_core].tolist()[0]
 
         st.header("🛠️ Nhập liệu")
         cw_list = master_df["Mã CW"].unique()
-        selected_cw = st.selectbox("Chọn Mã CW", cw_list, index=int(default_index))
+        selected_cw = st.selectbox("Chọn Mã CW", cw_list, index=int(st.session_state.get('user_index', 0)))
         
         cw_info = master_df[master_df["Mã CW"] == selected_cw].iloc[0]
         val_exercise = float(cw_info.get("Giá thực hiện", 0))
@@ -306,13 +304,49 @@ def main():
         val_underlying_code = str(cw_info.get("Mã CS", "UNKNOWN"))
         val_maturity_date = str(cw_info.get("Ngày đáo hạn", ""))
         
-        qty = st.number_input("Số lượng", value=default_qty, step=100.0)
-        cost_price = st.number_input("Giá vốn (VND)", value=default_price, step=50.0)
+        # Input có State (Giữ giá trị cũ nếu OCR không tìm thấy mới)
+        qty = st.number_input("Số lượng", value=st.session_state['user_qty'], step=100.0)
+        cost_price = st.number_input("Giá vốn (VND)", value=st.session_state['user_price'], step=50.0)
+        
+        # Sync ngược lại nếu user nhập tay
+        st.session_state['user_qty'] = qty
+        st.session_state['user_price'] = cost_price
 
+    # --- MAIN LOGIC (V11.3 - PARTIAL UPDATE) ---
     days_left = DataManager.calc_days_to_maturity(val_maturity_date)
     render_cw_profile(selected_cw, val_underlying_code, val_exercise, val_ratio, val_maturity_date, days_left)
     
-    current_real_price = DataManager.get_realtime_price(val_underlying_code)
+    # Logic ưu tiên Giá thị trường:
+    # 1. Nếu vừa OCR ra giá thị trường mới -> Dùng nó.
+    # 2. Nếu không, dùng giá user đang nhập/giả lập.
+    
+    manual_key = f"manual_price_{val_underlying_code}"
+    if manual_key not in st.session_state:
+        st.session_state[manual_key] = float(DataManager.get_realtime_price_simulated(val_underlying_code))
+        
+    # Check xem có hàng nóng từ OCR không
+    if 'temp_ocr_market_price' in st.session_state:
+        st.session_state[manual_key] = st.session_state['temp_ocr_market_price']
+        del st.session_state['temp_ocr_market_price'] # Dùng xong xóa ngay để không bị kẹt
+
+    st.markdown("---")
+    c_p1, c_p2 = st.columns([1, 2])
+    with c_p1:
+        st.info("📡 Giá thị trường (Live)")
+        if st.button("🔄 Reset giá giả lập"):
+            st.session_state[manual_key] = float(DataManager.get_realtime_price_simulated(val_underlying_code))
+            st.rerun()
+            
+    with c_p2:
+        current_real_price = st.number_input(
+            f"Giá {val_underlying_code} hiện tại (VND):", 
+            value=float(st.session_state[manual_key]),
+            step=100.0,
+            format="%.0f",
+            help="Tự động điền từ OCR (nếu quét bảng giá) hoặc Giả lập. Bạn có thể sửa tay."
+        )
+        st.session_state[manual_key] = current_real_price
+
     engine = FinancialEngine()
     bep = engine.calc_bep(val_exercise, cost_price, val_ratio)
     cw_intrinsic = engine.calc_intrinsic_value(current_real_price, val_exercise, val_ratio)
@@ -323,6 +357,7 @@ def main():
         st.session_state['sim_target_price'] = int(current_real_price)
     anchor_price = st.session_state['anchor_price']
 
+    # --- TABS ---
     tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "🎲 Simulator", "📉 Chart P/L"])
 
     with tab1:
