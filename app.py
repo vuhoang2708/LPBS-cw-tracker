@@ -11,9 +11,9 @@ from PIL import Image
 # ==========================================
 # 1. CONFIG & BRANDING
 # ==========================================
-st.set_page_config(page_title="LPBS CW Tracker - VH tự edit", layout="wide", page_icon="🔶")
+st.set_page_config(page_title="LPBS CW Tracker & Simulator", layout="wide", page_icon="🔶")
 
-# UPDATE: Giờ hiện tại
+# Dùng giờ động (Real-time) theo ý bạn để biết code đang chạy lúc nào
 vn_time = datetime.utcnow() + timedelta(hours=7)
 build_time_str = vn_time.strftime("%H:%M:%S - %d/%m/%Y")
 
@@ -75,12 +75,12 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. DATA LAYER
+# 2. DATA LAYER (Dữ liệu chuẩn do bạn cung cấp)
 # ==========================================
 class DataManager:
     @staticmethod
     def get_default_master_data():
-        """Dữ liệu lõi 13 mã CW mới nhất của LPBS"""
+        """Dữ liệu lõi 13 mã CW mới nhất của LPBS - Đã chuẩn hóa mã CW"""
         data = [
             {"Mã CW": "CMWG2519", "Mã CS": "MWG", "Tỷ lệ CĐ": "5:1", "Giá thực hiện": 88000, "Ngày đáo hạn": "2026-06-29", "Trạng thái": "Pre-listing"},
             {"Mã CW": "CWVHM2522", "Mã CS": "VHM", "Tỷ lệ CĐ": "10:1", "Giá thực hiện": 106000, "Ngày đáo hạn": "2026-12-28", "Trạng thái": "Pre-listing"},
@@ -149,26 +149,24 @@ class FinancialEngine:
             return "ATM (Ngang giá)", "orange"
 
 # ==========================================
-# 4. AI SERVICE LAYER (V9.6 - GEMINI 3.0 PRO)
-# ==========================================
-# ==========================================
-# 4. AI SERVICE LAYER (MERGED: User Prompt + Auto-Fallback)
+# 4. AI SERVICE LAYER (V10.1 - MERGED: FALLBACK + USER DATA)
 # ==========================================
 def process_image_with_gemini(image, api_key):
     genai.configure(api_key=api_key)
     generation_config = genai.types.GenerationConfig(temperature=0.0)
     
-    # --- CẤU HÌNH AUTO-FALLBACK ---
-    # Ưu tiên 1: Model bạn muốn dùng (3.0 Preview)
-    # Ưu tiên 2 & 3: Các model ổn định (Backup nếu cái đầu bị lỗi 404/Limit)
-    priority_models = ['gemini-3-flash-preview', 'gemini-flash-latest', 'gemini-1.5-flash']
+    # --- CƠ CHẾ BẢO VỆ 3 LỚP (AUTO-FALLBACK) ---
+    # 1. Thử model mới nhất (3.0 Flash Preview)
+    # 2. Nếu lỗi -> Thử model thông minh nhất (1.5 Pro)
+    # 3. Nếu vẫn lỗi -> Thử model nhanh nhất (1.5 Flash)
+    priority_models = ['gemini-3-flash-preview', 'gemini-1.5-pro', 'gemini-1.5-flash']
     
-    # --- PROMPT CỦA BẠN (GIỮ NGUYÊN) ---
+    # --- PROMPT THÔNG MINH CỦA BẠN ---
     prompt = """
     Bạn là một trợ lý nhập liệu tài chính (OCR). Nhiệm vụ:
     1. Tìm chính xác Mã CW theo chứng khoán cơ sở (MWG..., VHM..., VHM, MWG...).
        - Lưu ý: Chữ "W" và "V" rất dễ nhầm. Hãy nhìn kỹ ngữ cảnh. Mã CW thường bắt đầu bằng CW (ví dụ CWVHM).
-    2. Tìm Số lượng và Giá. Nếu thiếu thông tin giá thì tìm giá trị và số lượng mua . Giá = giá trị/ số lượng.
+    2. Tìm Số lượng và Giá. Nếu thiếu thông tin giá thì tìm giá trị chuyển tiền và số lượng mua. Giá = giá trị / số lượng.
     
     Yêu cầu: Trả về JSON thuần túy.
     Format: {"symbol": "XXX", "qty": 1000, "price": 50000}
@@ -176,21 +174,18 @@ def process_image_with_gemini(image, api_key):
     
     last_error = ""
 
-    # VÒNG LẶP XỬ LÝ (Thử lần lượt từng model)
+    # VÒNG LẶP XỬ LÝ
     for model_name in priority_models:
         try:
-            # Khởi tạo model hiện tại trong vòng lặp
             model = genai.GenerativeModel(model_name)
-            
-            # Gọi API
             response = model.generate_content([prompt, image], generation_config=generation_config)
             text = response.text.strip()
             
-            # --- XỬ LÝ KẾT QUẢ (Regex Cleaner) ---
+            # Regex Cleaner (Lọc JSON chuẩn)
             match = re.search(r'\{.*\}', text, re.DOTALL)
             if match:
                 json_data = json.loads(match.group(0))
-                # (Optional) Ghi chú lại model nào đã chạy thành công để bạn biết
+                # Đánh dấu model nào đã xử lý thành công để biết
                 json_data['_processed_by'] = model_name 
                 return json_data
             else:
@@ -201,8 +196,10 @@ def process_image_with_gemini(image, api_key):
             last_error = f"Lỗi với {model_name}: {str(e)}"
             continue # Thử model tiếp theo
             
-    # Nếu chạy hết cả 3 model mà vẫn lỗi thì mới đầu hàng
-    return {"error": f"Tất cả model đều thất bại. Lỗi cuối: {last_error}"}# ==========================================
+    # Nếu cả 3 model đều bó tay
+    return {"error": f"Tất cả model đều thất bại. Lỗi cuối: {last_error}"}
+
+# ==========================================
 # 5. UI HELPER
 # ==========================================
 def render_metric_card(label, value, sub="", color="black"):
@@ -235,7 +232,7 @@ def render_cw_profile(cw_code, und_code, exercise_price, ratio, maturity_date, d
 # ==========================================
 def main():
     st.title("🔶 LPBS CW Tracker & Simulator")
-    st.caption(f"System: V9.6 | Build: {build_time_str} | Gemini 3.0 Flash (Fixed)")
+    st.caption(f"System: V10.1 | Build: {build_time_str} | Gemini Merged Core")
 
     if 'ocr_result' not in st.session_state:
         st.session_state['ocr_result'] = None
@@ -251,7 +248,7 @@ def main():
         
         if uploaded_img and api_key:
             if st.button("🚀 Phân tích ngay"):
-                with st.spinner(" Đang xử lý..."):
+                with st.spinner("Đang xử lý (Cơ chế Auto-Fallback)..."):
                     image = Image.open(uploaded_img)
                     result = process_image_with_gemini(image, api_key)
                     
@@ -259,6 +256,8 @@ def main():
                         st.error(f"Lỗi AI: {result['error']}")
                     else: 
                         st.session_state['ocr_result'] = result
+                        model_used = result.get('_processed_by', 'Unknown')
+                        st.toast(f"✅ Xử lý thành công bởi: {model_used}")
             
             if st.session_state['ocr_result']:
                 with st.expander("👁️ Debug Info", expanded=True):
