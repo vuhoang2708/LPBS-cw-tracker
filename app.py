@@ -42,6 +42,9 @@ st.markdown("""
     }
     .metric-card { background: white; padding: 20px; border-radius: 12px; border: 1px solid #EEE; border-left: 5px solid #FF8F00; box-shadow: 0 4px 6px rgba(0,0,0,0.05); color: #4E342E; margin-bottom: 15px; }
     .cw-profile-box { background-color: #E3F2FD; border: 1px solid #90CAF9; border-radius: 10px; padding: 15px; margin-bottom: 20px; color: #0D47A1; }
+    
+    /* Style cho Debug Box */
+    .debug-box { background-color: #263238; color: #ECEFF1; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 0.85em; white-space: pre-wrap; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -111,7 +114,7 @@ class FinancialEngine:
         else: return "ATM (Ngang giá)", "orange"
 
 # ==========================================
-# 4. AI SERVICE LAYER (V13.0 - PYTHON MATH FALLBACK)
+# 4. AI SERVICE LAYER (V13.1 - ULTRA DEBUG)
 # ==========================================
 def process_image_with_gemini(image, api_key, mode="ALL"):
     genai.configure(api_key=api_key)
@@ -130,7 +133,6 @@ def process_image_with_gemini(image, api_key, mode="ALL"):
     else:
         task_desc = "Trích xuất dữ liệu tài chính."
 
-    # [UPDATE V13.0] Yêu cầu AI lấy thêm 'total_amount' để Python tự tính
     prompt = f"""
     Bạn là một trợ lý tài chính (OCR). Nhiệm vụ: {task_desc}
     
@@ -153,26 +155,30 @@ def process_image_with_gemini(image, api_key, mode="ALL"):
             response = model.generate_content([prompt, image], generation_config=generation_config)
             text = response.text.strip()
             
+            # [V13.1] Trả về cả Raw Text để soi lỗi
             start_idx = text.find('{')
             if start_idx != -1:
                 try:
                     json_data, _ = JSONDecoder().raw_decode(text[start_idx:])
-                    json_data['_processed_by'] = model_name 
+                    # Inject Debug Meta
+                    json_data['_meta_model'] = model_name
+                    json_data['_meta_raw_text'] = text # Trả về nguyên văn lời AI
+                    json_data['_meta_logs'] = errors_log
                     return json_data
                 except Exception as e:
-                    errors_log.append(f"{model_name} Parse Error: {str(e)}")
+                    errors_log.append(f"{model_name} Parse Error: {str(e)} | Raw: {text[:50]}...")
                     continue
             else:
-                errors_log.append(f"{model_name}: No JSON found.")
+                errors_log.append(f"{model_name}: No JSON found. | Raw: {text[:50]}...")
                 continue
         except Exception as e:
-            errors_log.append(f"{model_name}: {str(e)}")
+            errors_log.append(f"{model_name} Network/API Error: {str(e)}")
             continue 
             
-    return {"error": "Thất bại. Log lỗi:\n" + "\n".join(errors_log)}
+    return {"error": "Thất bại toàn tập", "_meta_logs": errors_log}
 
 def auto_map_symbol_and_rerun(ocr_result, master_df):
-    if not ocr_result: return
+    if not ocr_result or "error" in ocr_result: return
     det_sym = str(ocr_result.get('symbol', '')).upper().strip()
     if det_sym:
         mask_exact = master_df['Mã CW'] == det_sym
@@ -225,7 +231,7 @@ def render_cw_profile(cw_code, und_code, exercise_price, ratio, maturity_date, d
 # ==========================================
 def main():
     st.title("🔶 LPBS CW Tracker & Simulator")
-    st.caption(f"System: V13.0 | Build: {build_time_str} | Python Math Fallback")
+    st.caption(f"System: V13.1 | Build: {build_time_str} | Ultra Debug Mode")
 
     if 'ocr_result' not in st.session_state: st.session_state['ocr_result'] = None
     if 'user_qty' not in st.session_state: st.session_state['user_qty'] = 1000.0
@@ -258,15 +264,18 @@ def main():
                 
                 if uploaded_buy and active_key:
                     if st.button("🚀 Phân Tích", use_container_width=True):
-                        with st.spinner("Đang xử lý (Python Calc)..."):
+                        with st.spinner("Đang soi mã (Debug Active)..."):
                             image = Image.open(uploaded_buy)
                             result = process_image_with_gemini(image, active_key, mode="BUY_ORDER")
-                            if "error" in result: st.error(result['error'])
+                            
+                            st.session_state['ocr_result'] = result
+                            
+                            if "error" in result: 
+                                st.error(result['error'])
                             else:
-                                st.session_state['ocr_result'] = result
-                                
-                                # [LOGIC FIX V13.0] Ưu tiên lấy Price, nếu không có thì tự tính
+                                # Logic lấy giá Python Math Fallback
                                 price = 0.0
+                                calc_method = "AI Extracted"
                                 if result.get('price'):
                                     price = float(result['price'])
                                 elif result.get('total_amount') and result.get('qty'):
@@ -275,20 +284,34 @@ def main():
                                         q = float(result['qty'])
                                         if q > 0:
                                             price = t_amt / q
-                                            st.toast(f"ℹ️ Đã tự tính giá: {t_amt:,.0f}/{q:,.0f} = {price:,.0f}")
+                                            calc_method = f"Python Calc ({t_amt:,.0f}/{q:,.0f})"
+                                            st.toast(f"ℹ️ {calc_method}")
                                     except: pass
                                 
-                                # Scaling nếu giá quá nhỏ (phòng hờ)
-                                if price < 1000 and price > 0: price *= 1000
+                                # Ghi lại method tính để hiển thị debug
+                                st.session_state['ocr_result']['_meta_calc_method'] = calc_method
                                 
+                                if price < 1000 and price > 0: price *= 1000
                                 if price > 0: st.session_state['user_price'] = price
                                 if result.get('qty'): st.session_state['user_qty'] = float(result['qty'])
                                 
                                 auto_map_symbol_and_rerun(result, master_df)
                 
+                # [V13.1] Hộp Debug chi tiết
                 if st.session_state['ocr_result']:
-                    with st.expander("🔍 Debug Info"):
-                        st.json(st.session_state['ocr_result'])
+                    res = st.session_state['ocr_result']
+                    with st.expander("🔍 Deep Debug (Soi Lỗi)", expanded=True):
+                        st.markdown(f"**Model:** `{res.get('_meta_model', 'N/A')}`")
+                        st.markdown(f"**Calc Method:** `{res.get('_meta_calc_method', 'N/A')}`")
+                        
+                        st.markdown("**Raw AI Output (Nguyên văn):**")
+                        st.markdown(f"""<div class="debug-box">{res.get('_meta_raw_text', 'No Text')}</div>""", unsafe_allow_html=True)
+                        
+                        st.markdown("**Parsed JSON:**")
+                        st.json(res)
+                        
+                        if res.get('_meta_logs'):
+                            st.warning(f"Retry Logs: {res.get('_meta_logs')}")
             
             else: 
                 st.info("Nhập liệu thủ công")
@@ -330,6 +353,9 @@ def main():
                             with st.spinner("Đang đọc giá..."):
                                 image = Image.open(uploaded_mkt)
                                 result = process_image_with_gemini(image, active_key, mode="MARKET_BOARD")
+                                
+                                st.session_state['ocr_result'] = result # Lưu lại để debug
+                                
                                 if "error" in result: st.error(result['error'])
                                 else:
                                     if result.get('market_price'):
@@ -341,9 +367,14 @@ def main():
                                     else:
                                         st.warning("Không tìm thấy giá.")
                     
-                    if st.session_state['ocr_result'] and 'market_price' in st.session_state['ocr_result']:
-                         with st.expander("🔍 Debug Info"):
-                            st.json(st.session_state['ocr_result'])
+                    # [V13.1] Debug cho Bảng giá
+                    if st.session_state['ocr_result']:
+                        res = st.session_state['ocr_result']
+                        with st.expander("🔍 Deep Debug (Bảng Giá)", expanded=True):
+                             st.markdown(f"**Model:** `{res.get('_meta_model', 'N/A')}`")
+                             st.markdown("**Raw AI Output:**")
+                             st.markdown(f"""<div class="debug-box">{res.get('_meta_raw_text', 'No Text')}</div>""", unsafe_allow_html=True)
+                             st.json(res)
 
                 else:
                     st.info(f"Chỉnh giá thị trường cho **{und_code}**")
