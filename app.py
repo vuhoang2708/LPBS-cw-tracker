@@ -52,7 +52,7 @@ class DataManager:
     @staticmethod
     def get_default_master_data():
         data = [
-            {"Mã CW": "CWMWG2519", "Mã CS": "MWG", "Tỷ lệ CĐ": "5:1", "Giá thực hiện": 88000, "Ngày đáo hạn": "2026-06-29", "Trạng thái": "Pre-listing"},
+            {"Mã CW": "CMWG2519", "Mã CS": "MWG", "Tỷ lệ CĐ": "5:1", "Giá thực hiện": 88000, "Ngày đáo hạn": "2026-06-29", "Trạng thái": "Pre-listing"},
             {"Mã CW": "CWVHM2522", "Mã CS": "VHM", "Tỷ lệ CĐ": "10:1", "Giá thực hiện": 106000, "Ngày đáo hạn": "2026-12-28", "Trạng thái": "Pre-listing"},
             {"Mã CW": "CWSTB2505", "Mã CS": "STB", "Tỷ lệ CĐ": "3:1", "Giá thực hiện": 60000, "Ngày đáo hạn": "2026-06-29", "Trạng thái": "Pre-listing"},
             {"Mã CW": "CWHPG2516", "Mã CS": "HPG", "Tỷ lệ CĐ": "4:1", "Giá thực hiện": 32000, "Ngày đáo hạn": "2026-12-28", "Trạng thái": "Pre-listing"},
@@ -111,41 +111,38 @@ class FinancialEngine:
         else: return "ATM (Ngang giá)", "orange"
 
 # ==========================================
-# 4. AI SERVICE LAYER (V12.9 - FULL ROSTER)
+# 4. AI SERVICE LAYER (V13.0 - PYTHON MATH FALLBACK)
 # ==========================================
 def process_image_with_gemini(image, api_key, mode="ALL"):
     genai.configure(api_key=api_key)
     generation_config = {"temperature": 0.0}
     
-    # [RESTORED] Biệt đội đầy đủ - Chấp nhận lỗi để tìm người tài
     priority_models = [
-        'gemini-3-flash-preview', # Đã có raw_decode bảo kê
-'gemini-2.0-flash-exp', 
-                'gemini-3-pro-preview',         # Fallback mạnh
-        'gemini-1.5-flash'        # Chốt chặn cuối
+        'gemini-2.0-flash-exp', 
+        'gemini-3-flash-preview', 
+        'gemini-1.5-flash'
     ]
     
     if mode == "BUY_ORDER":
-        task_desc = "Trích xuất thông tin LỆNH MUA / BIÊN LAI. Tập trung vào: Mã, Số lượng và Giá vốn."
+        task_desc = "Trích xuất thông tin LỆNH MUA / BIÊN LAI."
     elif mode == "MARKET_BOARD":
-        task_desc = "Trích xuất thông tin BẢNG GIÁ / CAFEF. Tập trung vào: Mã và Giá thị trường (Cột Last/Current)."
+        task_desc = "Trích xuất thông tin BẢNG GIÁ / CAFEF."
     else:
         task_desc = "Trích xuất dữ liệu tài chính."
 
-    # Prompt thông minh (Có tính toán)
+    # [UPDATE V13.0] Yêu cầu AI lấy thêm 'total_amount' để Python tự tính
     prompt = f"""
     Bạn là một trợ lý tài chính (OCR). Nhiệm vụ: {task_desc}
     
     Các trường cần tìm:
-    1. Mã chứng khoán (Symbol): Tìm mã Chứng quyền (thường bắt đầu bằng C...) hoặc mã Cơ sở (3 chữ cái in hoa).
-    2. Số lượng (Qty): Khối lượng mua (Nếu là Bảng giá -> null).
-    3. Giá vốn (Price): 
-       - Nếu thấy "Đơn giá" hoặc "Giá khớp": Lấy giá đó.
-       - Nếu KHÔNG thấy giá, hãy TÍNH TOÁN: Price = Tổng số tiền / Số lượng.
-    4. Giá thị trường (Market Price): Giá hiện tại/Khớp lệnh trên bảng điện (Nếu là Biên lai mua -> null).
+    1. Mã chứng khoán (Symbol): Tìm mã Chứng quyền (C...) hoặc mã Cơ sở.
+    2. Số lượng (Qty): Khối lượng mua.
+    3. Giá vốn (Price): Giá khớp lệnh/đơn giá.
+    4. Tổng tiền (Total Amount): Tổng giá trị giao dịch (nếu có).
+    5. Giá thị trường (Market Price): Giá hiện tại trên bảng điện.
 
     Trả về JSON (chỉ số): 
-    {{"symbol": "XXX", "qty": 1000, "price": 50000, "market_price": 52000}}
+    {{"symbol": "XXX", "qty": 1000, "price": 2168, "total_amount": 65040000, "market_price": 52000}}
     """
     
     errors_log = [] 
@@ -156,7 +153,6 @@ def process_image_with_gemini(image, api_key, mode="ALL"):
             response = model.generate_content([prompt, image], generation_config=generation_config)
             text = response.text.strip()
             
-            # Raw Decode - Chìa khóa để dùng lại Model 3.0
             start_idx = text.find('{')
             if start_idx != -1:
                 try:
@@ -229,7 +225,7 @@ def render_cw_profile(cw_code, und_code, exercise_price, ratio, maturity_date, d
 # ==========================================
 def main():
     st.title("🔶 LPBS CW Tracker & Simulator")
-    st.caption(f"System: V12.9 | Build: {build_time_str} | Full Power Models")
+    st.caption(f"System: V13.0 | Build: {build_time_str} | Python Math Fallback")
 
     if 'ocr_result' not in st.session_state: st.session_state['ocr_result'] = None
     if 'user_qty' not in st.session_state: st.session_state['user_qty'] = 1000.0
@@ -262,17 +258,32 @@ def main():
                 
                 if uploaded_buy and active_key:
                     if st.button("🚀 Phân Tích", use_container_width=True):
-                        with st.spinner("Đang xử lý (Auto Calc)..."):
+                        with st.spinner("Đang xử lý (Python Calc)..."):
                             image = Image.open(uploaded_buy)
                             result = process_image_with_gemini(image, active_key, mode="BUY_ORDER")
                             if "error" in result: st.error(result['error'])
                             else:
                                 st.session_state['ocr_result'] = result
+                                
+                                # [LOGIC FIX V13.0] Ưu tiên lấy Price, nếu không có thì tự tính
+                                price = 0.0
                                 if result.get('price'):
-                                    raw_p = float(result['price'])
-                                    if raw_p < 1000 and raw_p > 0: raw_p *= 1000
-                                    st.session_state['user_price'] = raw_p
+                                    price = float(result['price'])
+                                elif result.get('total_amount') and result.get('qty'):
+                                    try:
+                                        t_amt = float(result['total_amount'])
+                                        q = float(result['qty'])
+                                        if q > 0:
+                                            price = t_amt / q
+                                            st.toast(f"ℹ️ Đã tự tính giá: {t_amt:,.0f}/{q:,.0f} = {price:,.0f}")
+                                    except: pass
+                                
+                                # Scaling nếu giá quá nhỏ (phòng hờ)
+                                if price < 1000 and price > 0: price *= 1000
+                                
+                                if price > 0: st.session_state['user_price'] = price
                                 if result.get('qty'): st.session_state['user_qty'] = float(result['qty'])
+                                
                                 auto_map_symbol_and_rerun(result, master_df)
                 
                 if st.session_state['ocr_result']:
