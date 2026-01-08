@@ -94,7 +94,7 @@ class FinancialEngine:
 # 4. AI SERVICE LAYER (V15.4)
 # ==========================================
 def process_receipt_with_gemini(image, api_key):
-    """Xử lý Lệnh mua/Biên lai (Single Item) - Gemini 3.0 Flash"""
+    """Nhập kết quả mua/Quét Biên lai nộp tiền (Vui lòng nhập từng mã Chứng quyền)"""
     genai.configure(api_key=api_key)
     generation_config = {"temperature": 0.0}
     priority_models = ['gemini-3-flash-preview', 'gemini-2.0-flash-exp']
@@ -134,7 +134,7 @@ def process_receipt_with_gemini(image, api_key):
     return {"error": "Thất bại toàn tập", "_meta_logs": errors_log}
 
 def scan_market_board(image, api_key):
-    """Xử lý Bảng giá (Batch Items) - Gemini 2.5 Flash - Robot Mode"""
+    """Nhập Giá thị trường (Batch Items) """
     genai.configure(api_key=api_key)
     target_model = 'gemini-2.5-flash' 
     fallback_models = ['gemini-2.0-flash-exp', 'gemini-1.5-flash']
@@ -144,7 +144,7 @@ def scan_market_board(image, api_key):
     MODE: STRICT_PIXEL_TO_JSON
     CONSTRAINTS: NO REASONING. NO ROUNDING. EXACT DIGITS ONLY.
     TASK: EXTRACT PAIRS [SYMBOL, MATCHING_PRICE]
-    TARGETS: UNDERLYING (e.g. VHM) AND WARRANTS (e.g. CW..., CV...)
+    TARGETS: UNDERLYING (e.g. VHM) AND WARRANTS (e.g. CW..., CXXX2510, CVHM2601...)
     OUTPUT SCHEMA: [{"symbol": "STR", "price": FLOAT}]
     """
     
@@ -234,7 +234,7 @@ def main():
             st.session_state['portfolio'] = []
             st.rerun()
 
-    tab_input, tab_report, tab_sim = st.tabs(["1️⃣ NHẬP LIỆU", "2️⃣ CẬP NHẬT GIÁ & BÁO CÁO", "3️⃣ GIẢ LẬP"])
+    tab_input, tab_report, tab_sim = st.tabs(["1️⃣ NHẬP DỮ LIỆU ĐẦU TƯ", "2️⃣ CẬP NHẬT GIÁ & BÁO CÁO", "3️⃣ GIẢ LẬP"])
 
     # --- TAB 1: INPUT ---
     with tab_input:
@@ -246,7 +246,7 @@ def main():
             if mode.startswith("📸"):
                 uploaded_file = st.file_uploader("Upload ảnh Biên lai", type=['png', 'jpg'])
                 if uploaded_file and active_key:
-                    if st.button("🚀 Phân Tích (Gemini 3)", use_container_width=True):
+                    if st.button("🚀 Phân Tích", use_container_width=True):
                         with st.spinner("Đang đọc biên lai..."):
                             image = Image.open(uploaded_file)
                             result = process_receipt_with_gemini(image, active_key)
@@ -305,16 +305,16 @@ def main():
             st.info("📭 Danh mục trống. Vui lòng thêm vị thế ở Tab 1.")
         else:
             st.markdown("### 🛠️ CẬP NHẬT GIÁ")
-            with st.expander("📸 Quét Bảng Giá (Batch OCR - Gemini 2.5 Flash)", expanded=False):
+            with st.expander("📸 Quét Bảng Giá ", expanded=False):
                 col_up, col_act = st.columns([3, 1])
                 with col_up:
-                    img_file = st.file_uploader("Chụp ảnh bảng giá", type=['png', 'jpg'], key="board_upload")
+                    img_file = st.file_uploader("Upload ảnh giá thị trường", type=['png', 'jpg'], key="board_upload")
                 with col_act:
                     st.write("") 
                     st.write("")
                     if img_file and active_key:
                         if st.button("🚀 Quét Ngay"):
-                            with st.spinner("Đang quét với Gemini 2.5 Robot Mode..."):
+                            with st.spinner("Đang quét"):
                                 raw_data = scan_market_board(Image.open(img_file), active_key)
                                 if not raw_data:
                                     st.error("Không tìm thấy giá nào.")
@@ -411,7 +411,7 @@ def main():
                 })
             st.dataframe(pd.DataFrame(display_data), use_container_width=True, hide_index=True)
 
-            st.markdown("### 3. PHÂN TÍCH RỦI RO")
+            st.markdown("### 3. PHÂN TÍCH")
             risk_data = []
             for item in pf:
                 bep = FinancialEngine.calc_bep(item['exercise_price'], item['cost_price'], item['ratio'])
