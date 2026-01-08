@@ -91,13 +91,10 @@ class FinancialEngine:
         return price_exercise + (price_cost * ratio)
 
 # ==========================================
-# 4. AI SERVICE LAYER (V15.2 - ROBOT MODE)
+# 4. AI SERVICE LAYER (V15.4)
 # ==========================================
 def process_receipt_with_gemini(image, api_key):
-    """
-    Xử lý Lệnh mua/Biên lai (Single Item)
-    Logic: Giữ Gemini 3.0 Flash Preview cho việc đọc hiểu ngữ cảnh biên lai
-    """
+    """Xử lý Lệnh mua/Biên lai (Single Item) - Gemini 3.0 Flash"""
     genai.configure(api_key=api_key)
     generation_config = {"temperature": 0.0}
     priority_models = ['gemini-3-flash-preview', 'gemini-2.0-flash-exp']
@@ -137,40 +134,26 @@ def process_receipt_with_gemini(image, api_key):
     return {"error": "Thất bại toàn tập", "_meta_logs": errors_log}
 
 def scan_market_board(image, api_key):
-    """
-    [ROBOT MODE] Xử lý Bảng giá (Batch Items)
-    Model: Gemini 2.5 Flash
-    Style: Machine Instruction Prompt
-    """
+    """Xử lý Bảng giá (Batch Items) - Gemini 2.5 Flash - Robot Mode"""
     genai.configure(api_key=api_key)
-    
-    # [STRATEGY] Dùng 2.5 Flash để thay thế 2.0.
     target_model = 'gemini-2.5-flash' 
     fallback_models = ['gemini-2.0-flash-exp', 'gemini-1.5-flash']
     
-    # [PROMPT ROBOT MODE] Cực ngắn, súc tích, dạng lệnh máy
     prompt = """
     SYSTEM: RAW_DATA_EXTRACTOR
     MODE: STRICT_PIXEL_TO_JSON
-    CONSTRAINTS:
-    - NO REASONING.
-    - NO ROUNDING.
-    - NO HALLUCINATION.
-    - EXACT DIGITS ONLY.
-    
+    CONSTRAINTS: NO REASONING. NO ROUNDING. EXACT DIGITS ONLY.
     TASK: EXTRACT PAIRS [SYMBOL, MATCHING_PRICE]
     TARGETS: UNDERLYING (e.g. VHM) AND WARRANTS (e.g. CW..., CV...)
     OUTPUT SCHEMA: [{"symbol": "STR", "price": FLOAT}]
     """
     
     all_models = [target_model] + fallback_models
-    
     for model_name in all_models:
         try:
             model = genai.GenerativeModel(model_name)
             response = model.generate_content([prompt, image])
             text = response.text.strip()
-            
             start = text.find('[')
             end = text.rfind(']') + 1
             if start != -1 and end != 0:
@@ -180,7 +163,6 @@ def scan_market_board(image, api_key):
         except Exception as e:
             print(f"OCR Board Error ({model_name}): {e}")
             continue
-            
     return []
 
 def auto_map_symbol(ocr_result, master_df):
@@ -227,7 +209,7 @@ def add_to_portfolio(cw_row, qty, price):
 # ==========================================
 def main():
     st.title("💎 LPBS CW Portfolio Master")
-    st.caption(f"System: V15.2 | Robot Mode | Model: Gemini 2.5 Flash")
+    st.caption(f"System: V15.4 | Option B: Auto-Calc | Model: Gemini 2.5 Flash")
 
     # State Management
     if 'portfolio' not in st.session_state: st.session_state['portfolio'] = []
@@ -335,8 +317,9 @@ def main():
                             with st.spinner("Đang quét với Gemini 2.5 Robot Mode..."):
                                 raw_data = scan_market_board(Image.open(img_file), active_key)
                                 if not raw_data:
-                                    st.error("Không tìm thấy giá nào. (Kiểm tra lại ảnh)")
+                                    st.error("Không tìm thấy giá nào.")
                                 else:
+                                    # [MAP LOGIC V15.4] - STRICT CHECK
                                     count = 0
                                     for price_item in raw_data:
                                         p_sym = str(price_item.get('symbol', '')).upper()
@@ -344,14 +327,33 @@ def main():
                                         if p_val < 1000: p_val *= 1000
                                         
                                         for pf_item in st.session_state['portfolio']:
-                                            if p_sym in pf_item['symbol']: 
-                                                pf_item['market_price_cw'] = p_val
-                                                count += 1
-                                            elif p_sym == pf_item['underlying']:
+                                            # Ưu tiên 1: Map Mã Cơ Sở (VHM -> VHM)
+                                            if p_sym == pf_item['underlying']:
                                                 pf_item['market_price_cs'] = p_val
                                                 count += 1
+                                            # Ưu tiên 2: Map Mã CW (CWVHM -> CWVHM)
+                                            # Chặn đứng việc VHM map vào CWVHM
+                                            elif p_sym == pf_item['symbol']: 
+                                                pf_item['market_price_cw'] = p_val
+                                                count += 1
+                                            # Map gần đúng: chỉ khi mã quét được dài > 4 (VD: CWVHM...)
+                                            elif (p_sym in pf_item['symbol']) and len(p_sym) > 4:
+                                                pf_item['market_price_cw'] = p_val
+                                                count += 1
+
                                     st.success(f"Đã cập nhật giá cho {count} mã!")
                                     st.rerun()
+
+            # [OPTION B] AUTO-THEORETICAL FALLBACK
+            # Logic: Nếu chưa có giá CW (0) nhưng có giá CS (>0), tự tính Intrinsic Value
+            for item in pf:
+                curr_cw = item.get('market_price_cw', 0.0)
+                curr_cs = item.get('market_price_cs', 0.0)
+                
+                if curr_cw <= 0 and curr_cs > 0:
+                     intrinsic = FinancialEngine.calc_intrinsic_value(curr_cs, item['exercise_price'], item['ratio'])
+                     # Cập nhật tạm thời để hiển thị, user có thể sửa lại
+                     item['market_price_cw'] = intrinsic
 
             # Data Editor & Reports
             input_data = []
