@@ -8,11 +8,12 @@ import json
 from json import JSONDecoder
 from datetime import datetime, timedelta
 from PIL import Image
+import uuid
 
 # ==========================================
 # 1. CONFIG & BRANDING
 # ==========================================
-st.set_page_config(page_title="LPBS CW Tracker & Simulator", layout="wide", page_icon="🔶")
+st.set_page_config(page_title="LPBS CW Portfolio Master", layout="wide", page_icon="💎")
 
 vn_time = datetime.utcnow() + timedelta(hours=7)
 build_time_str = vn_time.strftime("%H:%M:%S - %d/%m/%Y")
@@ -25,56 +26,66 @@ else:
 
 st.markdown("""
 <style>
-    .main { background-color: #FAFAFA; }
-    h1, h2, h3 { color: #5D4037 !important; font-family: 'Segoe UI', sans-serif; }
-    [data-testid="stSidebar"] { background-color: #FFF8E1; border-right: 1px solid #FFECB3; }
+    .main { background-color: #F8F9FA; }
+    h1, h2, h3 { color: #1A237E !important; font-family: 'Segoe UI', sans-serif; }
+    
+    [data-testid="stSidebar"] {
+        background-color: #E8EAF6;
+        border-right: 1px solid #C5CAE9;
+    }
+    
     .stTabs [data-baseweb="tab-list"] { gap: 8px; }
     .stTabs [data-baseweb="tab"] {
         height: 45px; background-color: #FFF; border-radius: 6px; 
-        color: #666; font-weight: 600; border: 1px solid #EEE;
+        color: #5C6BC0; font-weight: 600; border: 1px solid #E8EAF6;
     }
     .stTabs [aria-selected="true"] {
-        background-color: #FF8F00 !important; color: white !important; border-color: #FF8F00;
+        background-color: #3949AB !important; color: white !important; border-color: #3949AB;
     }
-    .stRadio [role="radiogroup"] {
-        background-color: #FFF; padding: 10px; border-radius: 8px;
-        border: 1px solid #EEE; justify-content: center;
+
+    .report-card {
+        background: white; padding: 20px; border-radius: 12px; 
+        border: 1px solid #E0E0E0; border-top: 5px solid #3949AB;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05); color: #263238; margin-bottom: 10px;
     }
-    .metric-card { background: white; padding: 20px; border-radius: 12px; border: 1px solid #EEE; border-left: 5px solid #FF8F00; box-shadow: 0 4px 6px rgba(0,0,0,0.05); color: #4E342E; margin-bottom: 15px; }
-    .cw-profile-box { background-color: #E3F2FD; border: 1px solid #90CAF9; border-radius: 10px; padding: 15px; margin-bottom: 20px; color: #0D47A1; }
+    .report-value { font-size: 1.8em; font-weight: bold; margin: 5px 0; }
+    .report-label { font-size: 0.9em; color: #78909C; text-transform: uppercase; letter-spacing: 0.5px; }
     
-    /* Style cho Debug Box */
-    .debug-box { background-color: #263238; color: #ECEFF1; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 0.85em; white-space: pre-wrap; }
+    .profit { color: #2E7D32; }
+    .loss { color: #C62828; }
+    
+    .debug-box { background-color: #263238; color: #ECEFF1; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 0.85em; white-space: pre-wrap; margin-top: 10px;}
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. DATA LAYER
+# 2. DATA LAYER (PORTFOLIO UPGRADE)
 # ==========================================
 class DataManager:
     @staticmethod
     def get_default_master_data():
         data = [
-            {"Mã CW": "CMWG2519", "Mã CS": "MWG", "Tỷ lệ CĐ": "5:1", "Giá thực hiện": 88000, "Ngày đáo hạn": "2026-06-29", "Trạng thái": "Pre-listing"},
-            {"Mã CW": "CWVHM2522", "Mã CS": "VHM", "Tỷ lệ CĐ": "10:1", "Giá thực hiện": 106000, "Ngày đáo hạn": "2026-12-28", "Trạng thái": "Pre-listing"},
-            {"Mã CW": "CWSTB2505", "Mã CS": "STB", "Tỷ lệ CĐ": "3:1", "Giá thực hiện": 60000, "Ngày đáo hạn": "2026-06-29", "Trạng thái": "Pre-listing"},
-            {"Mã CW": "CWHPG2516", "Mã CS": "HPG", "Tỷ lệ CĐ": "4:1", "Giá thực hiện": 32000, "Ngày đáo hạn": "2026-12-28", "Trạng thái": "Pre-listing"},
-            {"Mã CW": "CWACB2502", "Mã CS": "ACB", "Tỷ lệ CĐ": "2:1", "Giá thực hiện": 28000, "Ngày đáo hạn": "2026-12-28", "Trạng thái": "Pre-listing"},
-            {"Mã CW": "CWMBB2504", "Mã CS": "MBB", "Tỷ lệ CĐ": "2:1", "Giá thực hiện": 22000, "Ngày đáo hạn": "2026-12-28", "Trạng thái": "Pre-listing"},
-            {"Mã CW": "CWMSN2518", "Mã CS": "MSN", "Tỷ lệ CĐ": "10:1", "Giá thực hiện": 95000, "Ngày đáo hạn": "2026-12-28", "Trạng thái": "Pre-listing"},
-            {"Mã CW": "CWVNM2524", "Mã CS": "VNM", "Tỷ lệ CĐ": "8:1", "Giá thực hiện": 72000, "Ngày đáo hạn": "2026-12-28", "Trạng thái": "Pre-listing"},
-            {"Mã CW": "CWSHB2525", "Mã CS": "SHB", "Tỷ lệ CĐ": "1:1", "Giá thực hiện": 12500, "Ngày đáo hạn": "2026-06-29", "Trạng thái": "Pre-listing"},
-            {"Mã CW": "CWFPT2514", "Mã CS": "FPT", "Tỷ lệ CĐ": "8:1", "Giá thực hiện": 110000, "Ngày đáo hạn": "2026-12-28", "Trạng thái": "Pre-listing"},
-            {"Mã CW": "CWTCB2507", "Mã CS": "TCB", "Tỷ lệ CĐ": "5:1", "Giá thực hiện": 45000, "Ngày đáo hạn": "2026-12-28", "Trạng thái": "Pre-listing"},
-            {"Mã CW": "CWVPB2511", "Mã CS": "VPB", "Tỷ lệ CĐ": "3:1", "Giá thực hiện": 21500, "Ngày đáo hạn": "2026-12-28", "Trạng thái": "Pre-listing"},
-            {"Mã CW": "CWVIB2510", "Mã CS": "VIB", "Tỷ lệ CĐ": "2:1", "Giá thực hiện": 23000, "Ngày đáo hạn": "2026-06-29", "Trạng thái": "Pre-listing"}
+            {"Mã CW": "CMWG2519", "Mã CS": "MWG", "Tỷ lệ CĐ": "5:1", "Giá thực hiện": 88000, "Ngày đáo hạn": "2026-06-29"},
+            {"Mã CW": "CWVHM2522", "Mã CS": "VHM", "Tỷ lệ CĐ": "10:1", "Giá thực hiện": 106000, "Ngày đáo hạn": "2026-12-28"},
+            {"Mã CW": "CWSTB2505", "Mã CS": "STB", "Tỷ lệ CĐ": "3:1", "Giá thực hiện": 60000, "Ngày đáo hạn": "2026-06-29"},
+            {"Mã CW": "CWHPG2516", "Mã CS": "HPG", "Tỷ lệ CĐ": "4:1", "Giá thực hiện": 32000, "Ngày đáo hạn": "2026-12-28"},
+            {"Mã CW": "CWACB2502", "Mã CS": "ACB", "Tỷ lệ CĐ": "2:1", "Giá thực hiện": 28000, "Ngày đáo hạn": "2026-12-28"},
+            {"Mã CW": "CWMBB2504", "Mã CS": "MBB", "Tỷ lệ CĐ": "2:1", "Giá thực hiện": 22000, "Ngày đáo hạn": "2026-12-28"},
+            {"Mã CW": "CWMSN2518", "Mã CS": "MSN", "Tỷ lệ CĐ": "10:1", "Giá thực hiện": 95000, "Ngày đáo hạn": "2026-12-28"},
+            {"Mã CW": "CWVNM2524", "Mã CS": "VNM", "Tỷ lệ CĐ": "8:1", "Giá thực hiện": 72000, "Ngày đáo hạn": "2026-12-28"},
+            {"Mã CW": "CWSHB2525", "Mã CS": "SHB", "Tỷ lệ CĐ": "1:1", "Giá thực hiện": 12500, "Ngày đáo hạn": "2026-06-29"},
+            {"Mã CW": "CWFPT2514", "Mã CS": "FPT", "Tỷ lệ CĐ": "8:1", "Giá thực hiện": 110000, "Ngày đáo hạn": "2026-12-28"},
+            {"Mã CW": "CWTCB2507", "Mã CS": "TCB", "Tỷ lệ CĐ": "5:1", "Giá thực hiện": 45000, "Ngày đáo hạn": "2026-12-28"},
+            {"Mã CW": "CWVPB2511", "Mã CS": "VPB", "Tỷ lệ CĐ": "3:1", "Giá thực hiện": 21500, "Ngày đáo hạn": "2026-12-28"},
+            {"Mã CW": "CWVIB2510", "Mã CS": "VIB", "Tỷ lệ CĐ": "2:1", "Giá thực hiện": 23000, "Ngày đáo hạn": "2026-06-29"}
         ]
         return pd.DataFrame(data)
 
     @staticmethod
     def get_realtime_price_simulated(symbol):
+        # Giá giả lập để test report
         base_prices = {"HPG":28500,"MWG":48200,"VHM":41800,"STB":30500,"VNM":66000,"FPT":95000,"MBB":18500,"TCB":33000,"VPB":19200,"MSN":62000,"VIB":21500,"SHB":11200,"ACB":24500}
-        noise = np.random.uniform(0.99, 1.01)
+        noise = np.random.uniform(0.98, 1.02)
         return base_prices.get(symbol, 20000) * noise
 
     @staticmethod
@@ -109,27 +120,28 @@ class FinancialEngine:
 
     @staticmethod
     def get_moneyness(price_underlying, price_exercise):
-        if price_underlying > price_exercise: return "ITM (Có lời)", "green"
-        elif price_underlying < price_exercise: return "OTM (Chưa lời)", "red"
-        else: return "ATM (Ngang giá)", "orange"
+        if price_underlying > price_exercise: return "ITM", "green"
+        elif price_underlying < price_exercise: return "OTM", "red"
+        else: return "ATM", "orange"
 
 # ==========================================
-# 4. AI SERVICE LAYER (V13.1 - ULTRA DEBUG)
+# 4. AI SERVICE LAYER (V14.0 - MODEL 3.0 PRIORITY)
 # ==========================================
 def process_image_with_gemini(image, api_key, mode="ALL"):
     genai.configure(api_key=api_key)
     generation_config = {"temperature": 0.0}
     
+    # [REQ] Ưu tiên Gemini 3 Flash Preview theo chỉ đạo
     priority_models = [
-        'gemini-2.0-flash-exp', 
-        'gemini-3-flash-preview', 
-        'gemini-1.5-flash'
+        'gemini-3-flash-preview',  # <--- Priority #1
+        'gemini-2.0-flash-exp',    # Fallback 1
+        'gemini-1.5-flash'         # Fallback 2
     ]
     
     if mode == "BUY_ORDER":
         task_desc = "Trích xuất thông tin LỆNH MUA / BIÊN LAI."
     elif mode == "MARKET_BOARD":
-        task_desc = "Trích xuất thông tin BẢNG GIÁ / CAFEF."
+        task_desc = "Trích xuất thông tin BẢNG GIÁ."
     else:
         task_desc = "Trích xuất dữ liệu tài chính."
 
@@ -155,30 +167,29 @@ def process_image_with_gemini(image, api_key, mode="ALL"):
             response = model.generate_content([prompt, image], generation_config=generation_config)
             text = response.text.strip()
             
-            # [V13.1] Trả về cả Raw Text để soi lỗi
+            # Glass Box Debug Logic
             start_idx = text.find('{')
             if start_idx != -1:
                 try:
                     json_data, _ = JSONDecoder().raw_decode(text[start_idx:])
-                    # Inject Debug Meta
                     json_data['_meta_model'] = model_name
-                    json_data['_meta_raw_text'] = text # Trả về nguyên văn lời AI
+                    json_data['_meta_raw_text'] = text
                     json_data['_meta_logs'] = errors_log
                     return json_data
                 except Exception as e:
-                    errors_log.append(f"{model_name} Parse Error: {str(e)} | Raw: {text[:50]}...")
+                    errors_log.append(f"{model_name} Parse Error: {str(e)}")
                     continue
             else:
-                errors_log.append(f"{model_name}: No JSON found. | Raw: {text[:50]}...")
+                errors_log.append(f"{model_name}: No JSON found.")
                 continue
         except Exception as e:
-            errors_log.append(f"{model_name} Network/API Error: {str(e)}")
+            errors_log.append(f"{model_name} API Error: {str(e)}")
             continue 
             
     return {"error": "Thất bại toàn tập", "_meta_logs": errors_log}
 
-def auto_map_symbol_and_rerun(ocr_result, master_df):
-    if not ocr_result or "error" in ocr_result: return
+def auto_map_symbol(ocr_result, master_df):
+    if not ocr_result or "error" in ocr_result: return None
     det_sym = str(ocr_result.get('symbol', '')).upper().strip()
     if det_sym:
         mask_exact = master_df['Mã CW'] == det_sym
@@ -189,274 +200,278 @@ def auto_map_symbol_and_rerun(ocr_result, master_df):
         else:
             mask_core = mask_contains
 
-        found_index = -1
-        if mask_exact.any(): found_index = master_df.index[mask_exact].tolist()[0]
-        elif mask_core.any(): found_index = master_df.index[mask_core].tolist()[0]
+        if mask_exact.any(): return master_df.index[mask_exact].tolist()[0]
+        elif mask_core.any(): return master_df.index[mask_core].tolist()[0]
+    return None
+
+# ==========================================
+# 5. HELPER: PORTFOLIO & REPORT UI
+# ==========================================
+def add_to_portfolio(cw_row, qty, price):
+    if 'portfolio' not in st.session_state: st.session_state['portfolio'] = []
+    
+    # Check duplicate (Simple logic: Add new row)
+    item = {
+        "id": str(uuid.uuid4())[:8],
+        "symbol": cw_row['Mã CW'],
+        "underlying": cw_row['Mã CS'],
+        "qty": float(qty),
+        "cost_price": float(price),
+        "exercise_price": float(cw_row['Giá thực hiện']),
+        "ratio": float(cw_row['Tỷ lệ CĐ']),
+        "maturity": str(cw_row['Ngày đáo hạn']),
+        "market_price_cw": 0.0, # Sẽ cập nhật sau
+        "market_price_cs": 0.0  # Sẽ cập nhật sau
+    }
+    st.session_state['portfolio'].append(item)
+    st.toast(f"✅ Đã thêm {item['symbol']} vào danh mục!")
+
+def render_report_dashboard():
+    pf = st.session_state.get('portfolio', [])
+    if not pf:
+        st.info("📭 Danh mục trống. Vui lòng thêm vị thế ở Tab 1.")
+        return
+
+    # 1. Update Market Data (Simulated for Demo)
+    total_nav = 0
+    total_cost = 0
+    
+    df_pf = pd.DataFrame(pf)
+    
+    # Simulation Logic: Update giá thị trường cho từng mã
+    for item in pf:
+        # Giá cơ sở (CS)
+        cs_price = DataManager.get_realtime_price_simulated(item['underlying'])
+        item['market_price_cs'] = cs_price
         
-        if found_index != -1:
-            st.session_state['user_index'] = found_index
-            st.toast(f"✅ Đã nhận diện: {master_df.iloc[found_index]['Mã CW']}")
-            st.rerun() 
+        # Giá CW (Intrinsic + Premium giả định)
+        intrinsic = FinancialEngine.calc_intrinsic_value(cs_price, item['exercise_price'], item['ratio'])
+        market_cw = intrinsic * 1.05 if intrinsic > 0 else 100 # Premium 5% hoặc giá rác
+        item['market_price_cw'] = market_cw
+        
+        total_nav += item['qty'] * market_cw
+        total_cost += item['qty'] * item['cost_price']
 
-# ==========================================
-# 5. HELPER
-# ==========================================
-def render_metric_card(label, value, sub="", color="black"):
-    st.markdown(f"""
-    <div class="metric-card">
-        <div style="font-size:0.9em; color:#666; margin-bottom: 5px;">{label}</div>
-        <div style="font-size:1.6em; font-weight:bold; color:{color};">{value}</div>
-        <div style="font-size:0.85em; color:#888; margin-top: 5px;">{sub}</div>
-    </div>
-    """, unsafe_allow_html=True)
+    total_pnl = total_nav - total_cost
+    pnl_pct = (total_pnl / total_cost * 100) if total_cost > 0 else 0
 
-def render_cw_profile(cw_code, und_code, exercise_price, ratio, maturity_date, days_left):
-    st.markdown(f"""
-    <div class="cw-profile-box">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-            <div>
-                <h3 style="margin:0; color:#0277BD;">{cw_code} (Cơ sở: {und_code})</h3>
-                <small>Ngày đáo hạn: <b>{maturity_date}</b></small>
-            </div>
-            <div style="text-align:right;">
-                 <div>Còn lại: <b>{days_left} ngày</b></div>
-                 <small>Tỷ lệ CĐ: <b>{ratio}:1</b> | Giá thực hiện: <b>{exercise_price:,.0f}</b></small>
-            </div>
+    # --- SECTION 1: TỔNG QUAN ---
+    st.markdown("### 1. TỔNG QUAN TÀI SẢN")
+    c1, c2, c3 = st.columns(3)
+    
+    with c1:
+        st.markdown(f"""
+        <div class="report-card">
+            <div class="report-label">GIÁ TRỊ RÒNG (NAV)</div>
+            <div class="report-value" style="color:#1A237E">{total_nav:,.0f} VND</div>
         </div>
-    </div>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
+        
+    with c2:
+        color = "#2E7D32" if total_pnl >= 0 else "#C62828"
+        st.markdown(f"""
+        <div class="report-card">
+            <div class="report-label">TỔNG LÃI/LỖ</div>
+            <div class="report-value" style="color:{color}">{total_pnl:,.0f} VND</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+    with c3:
+        color = "#2E7D32" if pnl_pct >= 0 else "#C62828"
+        st.markdown(f"""
+        <div class="report-card">
+            <div class="report-label">HIỆU SUẤT</div>
+            <div class="report-value" style="color:{color}">{pnl_pct:+.2f}%</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # --- SECTION 2: CHI TIẾT DANH MỤC ---
+    st.markdown("### 2. CHI TIẾT DANH MỤC")
+    
+    # Prepare Dataframe for Display
+    display_data = []
+    for item in pf:
+        val_now = item['qty'] * item['market_price_cw']
+        val_cost = item['qty'] * item['cost_price']
+        pnl = val_now - val_cost
+        pct = (pnl / val_cost) if val_cost > 0 else 0
+        
+        display_data.append({
+            "Mã": item['symbol'],
+            "SL": item['qty'],
+            "Giá Vốn": item['cost_price'],
+            "Giá CS": item['market_price_cs'],
+            "Giá trị TT": val_now,
+            "Lãi/Lỗ": pnl,
+            "%": pct
+        })
+    
+    df_display = pd.DataFrame(display_data)
+    
+    st.dataframe(
+        df_display,
+        use_container_width=True,
+        column_config={
+            "SL": st.column_config.NumberColumn(format="%,.0f"),
+            "Giá Vốn": st.column_config.NumberColumn(format="%,.0f"),
+            "Giá CS": st.column_config.NumberColumn(format="%,.0f"),
+            "Giá trị TT": st.column_config.NumberColumn(format="%,.0f"),
+            "Lãi/Lỗ": st.column_config.NumberColumn(format="%,.0f"),
+            "%": st.column_config.NumberColumn(format="%.2%"),
+        },
+        hide_index=True
+    )
+
+    # --- SECTION 3: PHÂN TÍCH VỊ THẾ & RỦI RO ---
+    st.markdown("### 3. PHÂN TÍCH VỊ THẾ & RỦI RO")
+    risk_data = []
+    for item in pf:
+        bep = FinancialEngine.calc_bep(item['exercise_price'], item['cost_price'], item['ratio'])
+        dist = ((item['market_price_cs'] - bep) / bep) if bep > 0 else 0
+        days = DataManager.calc_days_to_maturity(item['maturity'])
+        
+        status_icon = "🟢" if dist > 0 else "🔴" if dist < -0.1 else "🟡"
+        
+        risk_data.append({
+            "Mã": item['symbol'],
+            "Hòa vốn (BEP)": bep,
+            "Khoảng cách": dist,
+            "Đáo hạn": item['maturity'],
+            "Còn lại": f"{days} ngày",
+            "Trạng thái": status_icon
+        })
+        
+    df_risk = pd.DataFrame(risk_data)
+    st.dataframe(
+        df_risk,
+        use_container_width=True,
+        column_config={
+            "Hòa vốn (BEP)": st.column_config.NumberColumn(format="%,.0f"),
+            "Khoảng cách": st.column_config.NumberColumn(format="%.1%"),
+        },
+        hide_index=True
+    )
 
 # ==========================================
 # 6. MAIN APP
 # ==========================================
 def main():
-    st.title("🔶 LPBS CW Tracker & Simulator")
-    st.caption(f"System: V13.1 | Build: {build_time_str} | Ultra Debug Mode")
+    st.title("💎 LPBS CW Portfolio Master")
+    st.caption(f"System: V14.0 | Build: {build_time_str} | Model: Gemini 3 Flash Preview")
 
+    # Init State
+    if 'portfolio' not in st.session_state: st.session_state['portfolio'] = []
     if 'ocr_result' not in st.session_state: st.session_state['ocr_result'] = None
-    if 'user_qty' not in st.session_state: st.session_state['user_qty'] = 1000.0
-    if 'user_price' not in st.session_state: st.session_state['user_price'] = 1000.0
-    if 'user_index' not in st.session_state: st.session_state['user_index'] = 0
+    if 'temp_qty' not in st.session_state: st.session_state['temp_qty'] = 1000.0
+    if 'temp_price' not in st.session_state: st.session_state['temp_price'] = 1000.0
+    if 'temp_index' not in st.session_state: st.session_state['temp_index'] = 0
 
     master_df = DataManager.get_default_master_data()
-    if "Giá thực hiện" in master_df.columns:
-        master_df["Giá thực hiện"] = master_df["Giá thực hiện"].apply(DataManager.clean_number_value)
-        master_df["Tỷ lệ CĐ"] = master_df["Tỷ lệ CĐ"].apply(DataManager.clean_number_value)
+    # Clean Data
+    master_df["Giá thực hiện"] = master_df["Giá thực hiện"].apply(DataManager.clean_number_value)
+    master_df["Tỷ lệ CĐ"] = master_df["Tỷ lệ CĐ"].apply(DataManager.clean_number_value)
 
     with st.sidebar:
         if not SYSTEM_API_KEY:
             st.warning("⚠️ Chưa cấu hình Secrets.")
-            active_key = st.text_input("Nhập Key (Tạm thời):", type="password")
+            active_key = st.text_input("Nhập Key:", type="password")
         else:
             active_key = SYSTEM_API_KEY
             
-        st.header("📸 QUY TRÌNH ĐẦU TƯ")
-        has_position = (st.session_state['user_qty'] > 0) and (st.session_state['user_price'] > 0)
-        
-        tab_buy, tab_market = st.tabs(["1️⃣ VỊ THẾ", "2️⃣ GIÁ & P/L"])
+        st.info(f"📁 Danh mục: {len(st.session_state['portfolio'])} mã")
+        if st.button("🗑️ Xóa danh mục"):
+            st.session_state['portfolio'] = []
+            st.rerun()
 
-        with tab_buy:
-            mode_t1 = st.radio("Chế độ:", ["📸 Quét OCR", "✍️ Nhập Tay"], horizontal=True, label_visibility="collapsed")
+    # --- TABS LAYOUT ---
+    tab_input, tab_report, tab_sim = st.tabs(["1️⃣ NHẬP LIỆU", "2️⃣ BÁO CÁO DANH MỤC", "3️⃣ GIẢ LẬP"])
 
-            if mode_t1 == "📸 Quét OCR":
-                st.info("Quét Lệnh Mua / SMS")
-                uploaded_buy = st.file_uploader("Chọn ảnh", type=["png", "jpg", "jpeg"], key="u_buy", label_visibility="collapsed")
-                
-                if uploaded_buy and active_key:
-                    if st.button("🚀 Phân Tích", use_container_width=True):
-                        with st.spinner("Đang soi mã (Debug Active)..."):
-                            image = Image.open(uploaded_buy)
+    # --- TAB 1: INPUT ---
+    with tab_input:
+        c1, c2 = st.columns([1, 1])
+        with c1:
+            st.markdown("#### 📥 Thêm Vị Thế Mới")
+            mode = st.radio("Chế độ:", ["📸 Quét OCR", "✍️ Nhập Tay"], horizontal=True)
+            
+            if mode == "📸 Quét OCR":
+                uploaded_file = st.file_uploader("Upload ảnh (Lệnh mua/Biên lai)", type=['png', 'jpg'])
+                if uploaded_file and active_key:
+                    if st.button("🚀 Phân Tích (Gemini 3)", use_container_width=True):
+                        with st.spinner("Đang xử lý với Gemini 3 Flash Preview..."):
+                            image = Image.open(uploaded_file)
+                            # Gọi hàm OCR
                             result = process_image_with_gemini(image, active_key, mode="BUY_ORDER")
-                            
                             st.session_state['ocr_result'] = result
                             
-                            if "error" in result: 
-                                st.error(result['error'])
-                            else:
-                                # Logic lấy giá Python Math Fallback
+                            if "error" not in result:
+                                # Logic lấy giá Python Calc Fallback
                                 price = 0.0
-                                calc_method = "AI Extracted"
                                 if result.get('price'):
                                     price = float(result['price'])
                                 elif result.get('total_amount') and result.get('qty'):
                                     try:
-                                        t_amt = float(result['total_amount'])
-                                        q = float(result['qty'])
-                                        if q > 0:
-                                            price = t_amt / q
-                                            calc_method = f"Python Calc ({t_amt:,.0f}/{q:,.0f})"
-                                            st.toast(f"ℹ️ {calc_method}")
+                                        price = float(result['total_amount']) / float(result['qty'])
+                                        st.toast(f"ℹ️ Auto Calc: {price:,.0f}")
                                     except: pass
                                 
-                                # Ghi lại method tính để hiển thị debug
-                                st.session_state['ocr_result']['_meta_calc_method'] = calc_method
-                                
                                 if price < 1000 and price > 0: price *= 1000
-                                if price > 0: st.session_state['user_price'] = price
-                                if result.get('qty'): st.session_state['user_qty'] = float(result['qty'])
                                 
-                                auto_map_symbol_and_rerun(result, master_df)
-                
-                # [V13.1] Hộp Debug chi tiết
-                if st.session_state['ocr_result']:
-                    res = st.session_state['ocr_result']
-                    with st.expander("🔍 Deep Debug (Soi Lỗi)", expanded=True):
-                        st.markdown(f"**Model:** `{res.get('_meta_model', 'N/A')}`")
-                        st.markdown(f"**Calc Method:** `{res.get('_meta_calc_method', 'N/A')}`")
-                        
-                        st.markdown("**Raw AI Output (Nguyên văn):**")
-                        st.markdown(f"""<div class="debug-box">{res.get('_meta_raw_text', 'No Text')}</div>""", unsafe_allow_html=True)
-                        
-                        st.markdown("**Parsed JSON:**")
-                        st.json(res)
-                        
-                        if res.get('_meta_logs'):
-                            st.warning(f"Retry Logs: {res.get('_meta_logs')}")
+                                st.session_state['temp_price'] = price
+                                if result.get('qty'): st.session_state['temp_qty'] = float(result['qty'])
+                                
+                                idx = auto_map_symbol(result, master_df)
+                                if idx is not None: st.session_state['temp_index'] = idx
+
+            # Form xác nhận (chung cho cả 2 mode)
+            cw_list = master_df["Mã CW"].unique()
+            selected_cw = st.selectbox("Mã CW", cw_list, index=int(st.session_state['temp_index']))
             
-            else: 
-                st.info("Nhập liệu thủ công")
-                cw_list = master_df["Mã CW"].unique()
-                selected_cw = st.selectbox("Chọn Mã CW", cw_list, index=int(st.session_state.get('user_index', 0)))
-                
-                qty = st.number_input("Số lượng", value=st.session_state['user_qty'], step=100.0)
-                cost_price = st.number_input("Giá vốn (VND)", value=st.session_state['user_price'], step=50.0)
-                
-                st.session_state['user_qty'] = qty
-                st.session_state['user_price'] = cost_price
-                
-                new_index = list(cw_list).index(selected_cw)
-                if new_index != st.session_state['user_index']:
-                    st.session_state['user_index'] = new_index
-                    st.rerun()
-
-        with tab_market:
-            if not has_position:
-                st.error("⛔ CHƯA CÓ VỊ THẾ")
-                st.caption("Hoàn tất Tab 1 trước.")
-            else:
-                mode_t2 = st.radio("Nguồn giá:", ["📸 Quét Bảng", "✍️ Nhập Giá"], horizontal=True, label_visibility="collapsed")
-                
-                idx = int(st.session_state.get('user_index', 0))
-                cw_row = master_df.iloc[idx]
-                und_code = str(cw_row.get("Mã CS", "UNKNOWN"))
-                
-                manual_key = f"manual_price_{und_code}"
-                if manual_key not in st.session_state:
-                    st.session_state[manual_key] = float(DataManager.get_realtime_price_simulated(und_code))
-
-                if mode_t2 == "📸 Quét Bảng":
-                    st.info(f"Cập nhật giá cho **{cw_row['Mã CW']}**")
-                    uploaded_mkt = st.file_uploader("Chọn ảnh bảng giá", type=["png", "jpg", "jpeg"], key="u_mkt", label_visibility="collapsed")
-                    
-                    if uploaded_mkt and active_key:
-                        if st.button("🚀 Cập Nhật Giá", use_container_width=True):
-                            with st.spinner("Đang đọc giá..."):
-                                image = Image.open(uploaded_mkt)
-                                result = process_image_with_gemini(image, active_key, mode="MARKET_BOARD")
-                                
-                                st.session_state['ocr_result'] = result # Lưu lại để debug
-                                
-                                if "error" in result: st.error(result['error'])
-                                else:
-                                    if result.get('market_price'):
-                                        raw_mp = float(result['market_price'])
-                                        if raw_mp < 1000 and raw_mp > 0: raw_mp *= 1000 
-                                        st.session_state[manual_key] = raw_mp
-                                        st.toast(f"✅ Giá mới: {raw_mp:,.0f}")
-                                        auto_map_symbol_and_rerun(result, master_df)
-                                    else:
-                                        st.warning("Không tìm thấy giá.")
-                    
-                    # [V13.1] Debug cho Bảng giá
-                    if st.session_state['ocr_result']:
-                        res = st.session_state['ocr_result']
-                        with st.expander("🔍 Deep Debug (Bảng Giá)", expanded=True):
-                             st.markdown(f"**Model:** `{res.get('_meta_model', 'N/A')}`")
-                             st.markdown("**Raw AI Output:**")
-                             st.markdown(f"""<div class="debug-box">{res.get('_meta_raw_text', 'No Text')}</div>""", unsafe_allow_html=True)
-                             st.json(res)
-
-                else:
-                    st.info(f"Chỉnh giá thị trường cho **{und_code}**")
-                    new_price = st.number_input("Giá hiện tại (VND):", value=float(st.session_state[manual_key]), step=100.0, format="%.0f")
-                    st.session_state[manual_key] = new_price
-                    if st.button("🔄 Reset giá giả lập", use_container_width=True):
-                        st.session_state[manual_key] = float(DataManager.get_realtime_price_simulated(und_code))
-                        st.rerun()
-
-    # --- MAIN DISPLAY ---
-    idx = int(st.session_state.get('user_index', 0))
-    selected_cw = master_df.iloc[idx]["Mã CW"]
-    cw_info = master_df.iloc[idx]
-    
-    val_exercise = float(cw_info.get("Giá thực hiện", 0))
-    val_ratio = float(cw_info.get("Tỷ lệ CĐ", 0))
-    val_underlying_code = str(cw_info.get("Mã CS", "UNKNOWN"))
-    val_maturity_date = str(cw_info.get("Ngày đáo hạn", ""))
-    
-    days_left = DataManager.calc_days_to_maturity(val_maturity_date)
-    render_cw_profile(selected_cw, val_underlying_code, val_exercise, val_ratio, val_maturity_date, days_left)
-    
-    manual_key = f"manual_price_{val_underlying_code}"
-    if manual_key not in st.session_state:
-        st.session_state[manual_key] = float(DataManager.get_realtime_price_simulated(val_underlying_code))
-    
-    current_real_price = st.session_state[manual_key]
-
-    if has_position:
-        engine = FinancialEngine()
-        bep = engine.calc_bep(val_exercise, st.session_state['user_price'], val_ratio)
-        cw_intrinsic = engine.calc_intrinsic_value(current_real_price, val_exercise, val_ratio)
-        
-        if 'anchor_cw' not in st.session_state or st.session_state['anchor_cw'] != selected_cw:
-            st.session_state['anchor_cw'] = selected_cw
-            st.session_state['anchor_price'] = current_real_price
-            st.session_state['sim_target_price'] = int(current_real_price)
-        anchor_price = st.session_state['anchor_price']
-
-        tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "🎲 Simulator", "📉 Chart P/L"])
-        
-        with tab1:
-            moneyness_label, moneyness_color = FinancialEngine.get_moneyness(current_real_price, val_exercise)
-            c1, c2, c3 = st.columns(3)
-            with c1: render_metric_card(f"Giá {val_underlying_code}", f"{current_real_price:,.0f} ₫", moneyness_label, moneyness_color)
-            with c2: 
-                diff_pct = ((bep - current_real_price) / current_real_price) * 100
-                status_text = f"Cần tăng {diff_pct:.1f}%" if diff_pct > 0 else "Đã vượt BEP"
-                render_metric_card("Điểm Hòa Vốn (BEP)", f"{bep:,.0f} ₫", status_text, "#E65100")
-            with c3: render_metric_card("Giá CW Lý thuyết", f"{cw_intrinsic:,.0f} ₫", "Intrinsic Value", "#1565C0")
+            qty = st.number_input("Số lượng", value=st.session_state['temp_qty'], step=100.0)
+            cost = st.number_input("Giá vốn", value=st.session_state['temp_price'], step=50.0)
             
-            if days_left < 30: st.warning(f"⚠️ Sắp đáo hạn ({days_left} ngày).")
+            if st.button("💾 Lưu vào Danh mục", type="primary", use_container_width=True):
+                # Tìm thông tin row trong master data
+                row = master_df[master_df['Mã CW'] == selected_cw].iloc[0]
+                add_to_portfolio(row, qty, cost)
+                st.success("Đã lưu thành công!")
 
-        with tab2:
-            st.info("Kéo thanh trượt để giả lập:")
-            slider_min = int(anchor_price * 0.5)
-            slider_max = int(max(anchor_price * 1.5, bep * 1.5)) 
-            target_price = st.slider("Giá Cơ sở Tương lai:", slider_min, slider_max, st.session_state['sim_target_price'], 100)
-            sim_cw = engine.calc_intrinsic_value(target_price, val_exercise, val_ratio)
-            sim_pnl = (sim_cw - st.session_state['user_price']) * st.session_state['user_qty']
-            sim_pnl_pct = (sim_pnl / (st.session_state['user_price'] * st.session_state['user_qty']) * 100) if st.session_state['user_price'] > 0 else 0
+        with c2:
+            # Debug Box (Glass Box Mode)
+            if st.session_state['ocr_result']:
+                res = st.session_state['ocr_result']
+                st.markdown("#### 🔍 Glass Box Debug")
+                with st.expander("Chi tiết xử lý AI", expanded=True):
+                    st.markdown(f"**Model:** `{res.get('_meta_model', 'N/A')}`")
+                    st.markdown("**Raw Output:**")
+                    st.markdown(f"""<div class="debug-box">{res.get('_meta_raw_text', 'No Text')}</div>""", unsafe_allow_html=True)
+                    st.json(res)
+
+    # --- TAB 2: REPORT (MAIN FEATURE) ---
+    with tab_report:
+        render_report_dashboard()
+
+    # --- TAB 3: SIMULATOR (SIMPLE) ---
+    with tab_sim:
+        if not st.session_state['portfolio']:
+            st.info("Vui lòng thêm vị thế vào danh mục trước.")
+        else:
+            pf_df = pd.DataFrame(st.session_state['portfolio'])
+            sim_cw = st.selectbox("Chọn mã để giả lập:", pf_df['symbol'].unique())
+            
+            item = next(x for x in st.session_state['portfolio'] if x['symbol'] == sim_cw)
+            
+            # Logic giả lập đơn giản
+            curr_cs = item['market_price_cs'] if item['market_price_cs'] > 0 else 20000
+            st.info(f"Giả lập cho **{sim_cw}** (Giá vốn: {item['cost_price']:,.0f})")
+            
+            target_cs = st.slider("Giá Cơ sở Tương lai:", int(curr_cs * 0.8), int(curr_cs * 1.5), int(curr_cs))
+            
+            sim_val = FinancialEngine.calc_intrinsic_value(target_cs, item['exercise_price'], item['ratio'])
+            sim_pnl = (sim_val - item['cost_price']) * item['qty']
             
             c1, c2 = st.columns(2)
-            with c1: render_metric_card("Giá CW Dự kiến", f"{sim_cw:,.0f} ₫")
-            with c2: 
-                color = "green" if sim_pnl >= 0 else "red"
-                st.markdown(f"### Lãi/Lỗ: :{color}[{sim_pnl:,.0f} VND ({sim_pnl_pct:.2f}%)]")
-
-        with tab3:
-            plot_max = max(current_real_price * 1.2, bep * 1.2)
-            x_vals = np.linspace(current_real_price * 0.8, plot_max, 50)
-            y_vals = [(engine.calc_intrinsic_value(x, val_exercise, val_ratio) - st.session_state['user_price'])*st.session_state['user_qty'] for x in x_vals]
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(x=x_vals, y=y_vals, mode='lines', name='P/L Profile', line=dict(color='#FF8F00', width=3)))
-            fig.add_vline(x=bep, line_dash="dash", line_color="#5D4037", annotation_text=f"BEP: {bep:,.0f}")
-            fig.add_hline(y=0, line_color="gray")
-            curr_pnl = (cw_intrinsic - st.session_state['user_price']) * st.session_state['user_qty']
-            fig.add_trace(go.Scatter(x=[current_real_price], y=[curr_pnl], mode='markers', name='Hiện tại', marker=dict(color='red', size=12)))
-            fig.update_layout(template="plotly_white", yaxis_title="Lãi/Lỗ (VND)", xaxis_title=f"Giá {val_underlying_code}")
-            st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("👈 Vui lòng hoàn tất **Bước 1 (Nhập vị thế)** ở thanh bên trái để xem phân tích.")
+            c1.metric("Giá CW Lý thuyết", f"{sim_val:,.0f} đ")
+            c2.metric("Lãi/Lỗ Dự kiến", f"{sim_pnl:,.0f} đ", delta_color="normal")
 
 if __name__ == "__main__":
     main()
