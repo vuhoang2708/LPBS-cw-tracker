@@ -65,7 +65,7 @@ class DataManager:
     @staticmethod
     def get_default_master_data():
         data = [
-            {"Mã CW": "CMWG2519", "Mã CS": "MWG", "Tỷ lệ CĐ": "5:1", "Giá thực hiện": 88000, "Ngày đáo hạn": "2026-06-29"},
+            {"Mã CW": "CWMWG2519", "Mã CS": "MWG", "Tỷ lệ CĐ": "5:1", "Giá thực hiện": 88000, "Ngày đáo hạn": "2026-06-29"},
             {"Mã CW": "CWVHM2522", "Mã CS": "VHM", "Tỷ lệ CĐ": "10:1", "Giá thực hiện": 106000, "Ngày đáo hạn": "2026-12-28"},
             {"Mã CW": "CWSTB2505", "Mã CS": "STB", "Tỷ lệ CĐ": "3:1", "Giá thực hiện": 60000, "Ngày đáo hạn": "2026-06-29"},
             {"Mã CW": "CWHPG2516", "Mã CS": "HPG", "Tỷ lệ CĐ": "4:1", "Giá thực hiện": 32000, "Ngày đáo hạn": "2026-12-28"},
@@ -125,17 +125,16 @@ class FinancialEngine:
         else: return "ATM", "orange"
 
 # ==========================================
-# 4. AI SERVICE LAYER (V14.0 - MODEL 3.0 PRIORITY)
+# 4. AI SERVICE LAYER (V14.2 - FIXED AUTO MAP)
 # ==========================================
 def process_image_with_gemini(image, api_key, mode="ALL"):
     genai.configure(api_key=api_key)
     generation_config = {"temperature": 0.0}
     
-    # [REQ] Ưu tiên Gemini 3 Flash Preview theo chỉ đạo
     priority_models = [
-        'gemini-3-flash-preview',  # <--- Priority #1
-        'gemini-2.0-flash-exp',    # Fallback 1
-        'gemini-1.5-flash'         # Fallback 2
+        'gemini-3-flash-preview', 
+        'gemini-2.0-flash-exp',    
+        'gemini-1.5-flash'         
     ]
     
     if mode == "BUY_ORDER":
@@ -149,7 +148,7 @@ def process_image_with_gemini(image, api_key, mode="ALL"):
     Bạn là một trợ lý tài chính (OCR). Nhiệm vụ: {task_desc}
     
     Các trường cần tìm:
-    1. Mã chứng khoán (Symbol): Tìm mã Chứng quyền (C...) hoặc mã Cơ sở.
+    1. Mã chứng khoán (Symbol): Tìm mã Chứng quyền (CW...) hoặc mã Cơ sở.
     2. Số lượng (Qty): Khối lượng mua.
     3. Giá vốn (Price): Giá khớp lệnh/đơn giá.
     4. Tổng tiền (Total Amount): Tổng giá trị giao dịch (nếu có).
@@ -188,20 +187,36 @@ def process_image_with_gemini(image, api_key, mode="ALL"):
             
     return {"error": "Thất bại toàn tập", "_meta_logs": errors_log}
 
+# [PATCH V14.1] Logic Quét Ngược (Reverse Scan)
 def auto_map_symbol(ocr_result, master_df):
     if not ocr_result or "error" in ocr_result: return None
+    
     det_sym = str(ocr_result.get('symbol', '')).upper().strip()
-    if det_sym:
-        mask_exact = master_df['Mã CW'] == det_sym
-        mask_contains = master_df['Mã CW'].str.contains(det_sym) | master_df['Mã CS'].str.contains(det_sym)
-        core_sym = re.sub(r'[^A-Z]', '', det_sym).replace("CW", "").replace("CV", "")
-        if len(core_sym) >= 3:
-            mask_core = master_df['Mã CS'].str.contains(core_sym)
-        else:
-            mask_core = mask_contains
+    
+    # Ưu tiên 1: Khớp chính xác Mã CW
+    mask_exact = master_df['Mã CW'] == det_sym
+    if mask_exact.any(): 
+        return master_df.index[mask_exact].tolist()[0]
+    
+    # Ưu tiên 2: Quét ngược (Scan Underlying từ Master Data)
+    unique_underlying = master_df['Mã CS'].unique()
+    found_candidates = []
+    for code in unique_underlying:
+        if code in det_sym: # VD: Tìm thấy "VHM" trong "CVWHM"
+            found_candidates.append(code)
+    
+    if found_candidates:
+        best_match = found_candidates[0]
+        mask_core = master_df['Mã CS'] == best_match
+        if mask_core.any():
+            return master_df.index[mask_core].tolist()[0]
 
-        if mask_exact.any(): return master_df.index[mask_exact].tolist()[0]
-        elif mask_core.any(): return master_df.index[mask_core].tolist()[0]
+    # Ưu tiên 3: Fix lỗi Typo phổ biến (W -> V)
+    fixed_sym = det_sym.replace("W", "V").replace("CV", "") 
+    mask_retry = master_df['Mã CS'].str.contains(fixed_sym)
+    if len(fixed_sym) >= 3 and mask_retry.any():
+        return master_df.index[mask_retry].tolist()[0]
+
     return None
 
 # ==========================================
@@ -210,7 +225,6 @@ def auto_map_symbol(ocr_result, master_df):
 def add_to_portfolio(cw_row, qty, price):
     if 'portfolio' not in st.session_state: st.session_state['portfolio'] = []
     
-    # Check duplicate (Simple logic: Add new row)
     item = {
         "id": str(uuid.uuid4())[:8],
         "symbol": cw_row['Mã CW'],
@@ -220,8 +234,8 @@ def add_to_portfolio(cw_row, qty, price):
         "exercise_price": float(cw_row['Giá thực hiện']),
         "ratio": float(cw_row['Tỷ lệ CĐ']),
         "maturity": str(cw_row['Ngày đáo hạn']),
-        "market_price_cw": 0.0, # Sẽ cập nhật sau
-        "market_price_cs": 0.0  # Sẽ cập nhật sau
+        "market_price_cw": 0.0,
+        "market_price_cs": 0.0
     }
     st.session_state['portfolio'].append(item)
     st.toast(f"✅ Đã thêm {item['symbol']} vào danh mục!")
@@ -232,21 +246,16 @@ def render_report_dashboard():
         st.info("📭 Danh mục trống. Vui lòng thêm vị thế ở Tab 1.")
         return
 
-    # 1. Update Market Data (Simulated for Demo)
     total_nav = 0
     total_cost = 0
     
-    df_pf = pd.DataFrame(pf)
-    
-    # Simulation Logic: Update giá thị trường cho từng mã
+    # Simulation Logic
     for item in pf:
-        # Giá cơ sở (CS)
         cs_price = DataManager.get_realtime_price_simulated(item['underlying'])
         item['market_price_cs'] = cs_price
         
-        # Giá CW (Intrinsic + Premium giả định)
         intrinsic = FinancialEngine.calc_intrinsic_value(cs_price, item['exercise_price'], item['ratio'])
-        market_cw = intrinsic * 1.05 if intrinsic > 0 else 100 # Premium 5% hoặc giá rác
+        market_cw = intrinsic * 1.05 if intrinsic > 0 else 100 
         item['market_price_cw'] = market_cw
         
         total_nav += item['qty'] * market_cw
@@ -288,7 +297,6 @@ def render_report_dashboard():
     # --- SECTION 2: CHI TIẾT DANH MỤC ---
     st.markdown("### 2. CHI TIẾT DANH MỤC")
     
-    # Prepare Dataframe for Display
     display_data = []
     for item in pf:
         val_now = item['qty'] * item['market_price_cw']
@@ -357,17 +365,16 @@ def render_report_dashboard():
 # ==========================================
 def main():
     st.title("💎 LPBS CW Portfolio Master")
-    st.caption(f"System: V14.0 | Build: {build_time_str} | Model: Gemini 3 Flash Preview")
+    st.caption(f"System: V14.2 | Clean Build | Model: Gemini 3 Flash Preview")
 
-    # Init State
+    # [CLEAN] Khởi tạo giá trị bằng 0 hoặc Rỗng
     if 'portfolio' not in st.session_state: st.session_state['portfolio'] = []
     if 'ocr_result' not in st.session_state: st.session_state['ocr_result'] = None
-    if 'temp_qty' not in st.session_state: st.session_state['temp_qty'] = 1000.0
-    if 'temp_price' not in st.session_state: st.session_state['temp_price'] = 1000.0
+    if 'temp_qty' not in st.session_state: st.session_state['temp_qty'] = 0.0 # Clean
+    if 'temp_price' not in st.session_state: st.session_state['temp_price'] = 0.0 # Clean
     if 'temp_index' not in st.session_state: st.session_state['temp_index'] = 0
 
     master_df = DataManager.get_default_master_data()
-    # Clean Data
     master_df["Giá thực hiện"] = master_df["Giá thực hiện"].apply(DataManager.clean_number_value)
     master_df["Tỷ lệ CĐ"] = master_df["Tỷ lệ CĐ"].apply(DataManager.clean_number_value)
 
@@ -383,7 +390,6 @@ def main():
             st.session_state['portfolio'] = []
             st.rerun()
 
-    # --- TABS LAYOUT ---
     tab_input, tab_report, tab_sim = st.tabs(["1️⃣ NHẬP LIỆU", "2️⃣ BÁO CÁO DANH MỤC", "3️⃣ GIẢ LẬP"])
 
     # --- TAB 1: INPUT ---
@@ -399,12 +405,10 @@ def main():
                     if st.button("🚀 Phân Tích (Gemini 3)", use_container_width=True):
                         with st.spinner("Đang xử lý với Gemini 3 Flash Preview..."):
                             image = Image.open(uploaded_file)
-                            # Gọi hàm OCR
                             result = process_image_with_gemini(image, active_key, mode="BUY_ORDER")
                             st.session_state['ocr_result'] = result
                             
                             if "error" not in result:
-                                # Logic lấy giá Python Calc Fallback
                                 price = 0.0
                                 if result.get('price'):
                                     price = float(result['price'])
@@ -419,24 +423,30 @@ def main():
                                 st.session_state['temp_price'] = price
                                 if result.get('qty'): st.session_state['temp_qty'] = float(result['qty'])
                                 
+                                # [PATCH] Gọi hàm Auto Map V14.1
                                 idx = auto_map_symbol(result, master_df)
                                 if idx is not None: st.session_state['temp_index'] = idx
 
-            # Form xác nhận (chung cho cả 2 mode)
             cw_list = master_df["Mã CW"].unique()
             selected_cw = st.selectbox("Mã CW", cw_list, index=int(st.session_state['temp_index']))
             
+            # [CLEAN] Default value = 0.0
             qty = st.number_input("Số lượng", value=st.session_state['temp_qty'], step=100.0)
             cost = st.number_input("Giá vốn", value=st.session_state['temp_price'], step=50.0)
             
             if st.button("💾 Lưu vào Danh mục", type="primary", use_container_width=True):
-                # Tìm thông tin row trong master data
-                row = master_df[master_df['Mã CW'] == selected_cw].iloc[0]
-                add_to_portfolio(row, qty, cost)
-                st.success("Đã lưu thành công!")
+                if qty <= 0 or cost <= 0:
+                    st.error("Số lượng và Giá vốn phải lớn hơn 0")
+                else:
+                    row = master_df[master_df['Mã CW'] == selected_cw].iloc[0]
+                    add_to_portfolio(row, qty, cost)
+                    st.success("Đã lưu thành công!")
+                    # Reset input sau khi lưu
+                    st.session_state['temp_qty'] = 0.0
+                    st.session_state['temp_price'] = 0.0
+                    st.rerun()
 
         with c2:
-            # Debug Box (Glass Box Mode)
             if st.session_state['ocr_result']:
                 res = st.session_state['ocr_result']
                 st.markdown("#### 🔍 Glass Box Debug")
@@ -446,21 +456,17 @@ def main():
                     st.markdown(f"""<div class="debug-box">{res.get('_meta_raw_text', 'No Text')}</div>""", unsafe_allow_html=True)
                     st.json(res)
 
-    # --- TAB 2: REPORT (MAIN FEATURE) ---
     with tab_report:
         render_report_dashboard()
 
-    # --- TAB 3: SIMULATOR (SIMPLE) ---
     with tab_sim:
         if not st.session_state['portfolio']:
             st.info("Vui lòng thêm vị thế vào danh mục trước.")
         else:
             pf_df = pd.DataFrame(st.session_state['portfolio'])
             sim_cw = st.selectbox("Chọn mã để giả lập:", pf_df['symbol'].unique())
-            
             item = next(x for x in st.session_state['portfolio'] if x['symbol'] == sim_cw)
             
-            # Logic giả lập đơn giản
             curr_cs = item['market_price_cs'] if item['market_price_cs'] > 0 else 20000
             st.info(f"Giả lập cho **{sim_cw}** (Giá vốn: {item['cost_price']:,.0f})")
             
