@@ -43,6 +43,7 @@ st.markdown("""
 class DataManager:
     @staticmethod
     def get_default_master_data():
+        # [DATA] Master Data chuẩn hóa (CWMWG...)
         data = [
             {"Mã CW": "CWMWG2519", "Mã CS": "MWG", "Tỷ lệ CĐ": "5:1", "Giá thực hiện": 88000, "Ngày đáo hạn": "2026-06-29"},
             {"Mã CW": "CWVHM2522", "Mã CS": "VHM", "Tỷ lệ CĐ": "10:1", "Giá thực hiện": 106000, "Ngày đáo hạn": "2026-12-28"},
@@ -91,14 +92,18 @@ class FinancialEngine:
         return price_exercise + (price_cost * ratio)
 
 # ==========================================
-# 4. AI SERVICE LAYER (V15.4)
+# 4. AI SERVICE LAYER (HYBRID ENGINE)
 # ==========================================
 def process_receipt_with_gemini(image, api_key):
-    """Nhập kết quả mua/Quét Biên lai nộp tiền (Vui lòng nhập từng mã Chứng quyền)"""
+    """
+    Xử lý Lệnh mua/Biên lai (Single Item)
+    Model: Gemini 3.0 Flash Preview (Ưu tiên hiểu ngữ cảnh)
+    """
     genai.configure(api_key=api_key)
     generation_config = {"temperature": 0.0}
     priority_models = ['gemini-3-flash-preview', 'gemini-2.0-flash-exp']
     
+    # Prompt ép trả về 0 để tránh NULL
     prompt = f"""
     Bạn là một trợ lý tài chính (OCR). Nhiệm vụ: Trích xuất thông tin LỆNH MUA / BIÊN LAI NỘP TIỀN.
     
@@ -134,8 +139,13 @@ def process_receipt_with_gemini(image, api_key):
     return {"error": "Thất bại toàn tập", "_meta_logs": errors_log}
 
 def scan_market_board(image, api_key):
-    """Nhập Giá thị trường (Batch Items) """
+    """
+    [ROBOT MODE] Xử lý Bảng giá (Batch Items)
+    Model: Gemini 2.5 Flash (Vision First)
+    Style: Machine Instruction Prompt
+    """
     genai.configure(api_key=api_key)
+    
     target_model = 'gemini-2.5-flash' 
     fallback_models = ['gemini-2.0-flash-exp', 'gemini-1.5-flash']
     
@@ -144,7 +154,7 @@ def scan_market_board(image, api_key):
     MODE: STRICT_PIXEL_TO_JSON
     CONSTRAINTS: NO REASONING. NO ROUNDING. EXACT DIGITS ONLY.
     TASK: EXTRACT PAIRS [SYMBOL, MATCHING_PRICE]
-    TARGETS: UNDERLYING (e.g. VHM) AND WARRANTS (e.g. CW..., CXXX2510, CVHM2601...)
+    TARGETS: UNDERLYING (e.g. VHM) AND WARRANTS (e.g. CW..., CV...)
     OUTPUT SCHEMA: [{"symbol": "STR", "price": FLOAT}]
     """
     
@@ -154,6 +164,7 @@ def scan_market_board(image, api_key):
             model = genai.GenerativeModel(model_name)
             response = model.generate_content([prompt, image])
             text = response.text.strip()
+            
             start = text.find('[')
             end = text.rfind(']') + 1
             if start != -1 and end != 0:
@@ -163,6 +174,7 @@ def scan_market_board(image, api_key):
         except Exception as e:
             print(f"OCR Board Error ({model_name}): {e}")
             continue
+            
     return []
 
 def auto_map_symbol(ocr_result, master_df):
@@ -209,9 +221,9 @@ def add_to_portfolio(cw_row, qty, price):
 # ==========================================
 def main():
     st.title("💎 LPBS CW Portfolio Master")
-    st.caption(f"System: V15.4 | Option B: Auto-Calc | Model: Gemini 2.5 Flash")
+    st.caption(f"System: V15.7 | Final Release | Mode: Hybrid AI")
 
-    # State Management
+    # State Management (Clean Init)
     if 'portfolio' not in st.session_state: st.session_state['portfolio'] = []
     if 'ocr_result' not in st.session_state: st.session_state['ocr_result'] = None
     if 'temp_qty' not in st.session_state: st.session_state['temp_qty'] = 0.0
@@ -234,7 +246,7 @@ def main():
             st.session_state['portfolio'] = []
             st.rerun()
 
-    tab_input, tab_report, tab_sim = st.tabs(["1️⃣ NHẬP DỮ LIỆU ĐẦU TƯ", "2️⃣ CẬP NHẬT GIÁ & BÁO CÁO", "3️⃣ GIẢ LẬP"])
+    tab_input, tab_report, tab_sim = st.tabs(["1️⃣ NHẬP LIỆU", "2️⃣ CẬP NHẬT GIÁ & BÁO CÁO", "3️⃣ GIẢ LẬP"])
 
     # --- TAB 1: INPUT ---
     with tab_input:
@@ -243,10 +255,11 @@ def main():
             st.markdown("#### 📥 Thêm Vị Thế Mới")
             mode = st.radio("Chế độ:", ["📸 Quét OCR (Lệnh mua/Biên lai)", "✍️ Nhập Tay"], horizontal=True)
             
+            # BLOCK 1: OCR Logic
             if mode.startswith("📸"):
                 uploaded_file = st.file_uploader("Upload ảnh Biên lai", type=['png', 'jpg'])
                 if uploaded_file and active_key:
-                    if st.button("🚀 Phân Tích", use_container_width=True):
+                    if st.button("🚀 Phân Tích (Gemini 3)", use_container_width=True):
                         with st.spinner("Đang đọc biên lai..."):
                             image = Image.open(uploaded_file)
                             result = process_receipt_with_gemini(image, active_key)
@@ -265,30 +278,65 @@ def main():
                                 
                                 idx = auto_map_symbol(result, master_df)
                                 if idx is not None: st.session_state['temp_index'] = idx
-
-            cw_list = master_df["Mã CW"].unique()
-            current_idx = st.session_state['temp_index']
-            if current_idx is not None and (current_idx < 0 or current_idx >= len(cw_list)):
-                 current_idx = None
-
-            selected_cw = st.selectbox("Mã CW", cw_list, index=current_idx, placeholder="Chọn mã CW...")
-            qty = st.number_input("Số lượng", value=st.session_state['temp_qty'], step=100.0)
-            cost = st.number_input("Giá vốn", value=st.session_state['temp_price'], step=50.0)
             
-            if st.button("💾 Lưu vào Danh mục", type="primary", use_container_width=True):
-                if not selected_cw:
-                    st.error("⚠️ Vui lòng chọn Mã CW!")
-                elif qty <= 0 or cost <= 0:
-                    st.error("⚠️ Số lượng và Giá vốn phải lớn hơn 0")
-                else:
-                    row = master_df[master_df['Mã CW'] == selected_cw].iloc[0]
-                    add_to_portfolio(row, qty, cost)
-                    st.success("Đã lưu thành công!")
-                    st.session_state['temp_qty'] = 0.0
-                    st.session_state['temp_price'] = 0.0
-                    st.session_state['temp_index'] = None
-                    st.session_state['ocr_result'] = None
-                    st.rerun()
+            # BLOCK 2: FORM NHẬP LIỆU (SMART VISIBILITY)
+            should_show_form = False
+            is_locked = True if mode.startswith("📸") else False
+
+            if "Nhập Tay" in mode:
+                should_show_form = True
+            elif mode.startswith("📸") and st.session_state.get('ocr_result'):
+                should_show_form = True
+            
+            if should_show_form:
+                st.divider()
+                if is_locked:
+                    st.caption("🔒 Chế độ Xem: Dữ liệu từ AI. Muốn sửa đổi, vui lòng chọn chế độ 'Nhập Tay'.")
+
+                cw_list = master_df["Mã CW"].unique()
+                current_idx = st.session_state['temp_index']
+                if current_idx is not None and (current_idx < 0 or current_idx >= len(cw_list)):
+                     current_idx = None
+
+                selected_cw = st.selectbox(
+                    "Mã CW", 
+                    cw_list, 
+                    index=current_idx, 
+                    placeholder="Chọn mã CW...",
+                    disabled=is_locked 
+                )
+                
+                qty = st.number_input(
+                    "Số lượng", 
+                    value=st.session_state['temp_qty'], 
+                    step=100.0,
+                    disabled=is_locked 
+                )
+                
+                cost = st.number_input(
+                    "Giá vốn", 
+                    value=st.session_state['temp_price'], 
+                    step=50.0,
+                    disabled=is_locked 
+                )
+                
+                if st.button("💾 Lưu vào Danh mục", type="primary", use_container_width=True):
+                    if not selected_cw:
+                        st.error("⚠️ Vui lòng chọn Mã CW!")
+                    elif qty <= 0 or cost <= 0:
+                        st.error("⚠️ Số lượng và Giá vốn phải lớn hơn 0")
+                    else:
+                        row = master_df[master_df['Mã CW'] == selected_cw].iloc[0]
+                        add_to_portfolio(row, qty, cost)
+                        st.success("Đã lưu thành công!")
+                        st.session_state['temp_qty'] = 0.0
+                        st.session_state['temp_price'] = 0.0
+                        st.session_state['temp_index'] = None
+                        st.session_state['ocr_result'] = None
+                        st.rerun()
+
+            elif mode.startswith("📸") and not st.session_state.get('ocr_result'):
+                st.info("👈 Vui lòng Upload ảnh và bấm 'Phân Tích' để hiển thị thông tin.")
 
         with c2:
             if st.session_state['ocr_result']:
@@ -305,57 +353,67 @@ def main():
             st.info("📭 Danh mục trống. Vui lòng thêm vị thế ở Tab 1.")
         else:
             st.markdown("### 🛠️ CẬP NHẬT GIÁ")
-            with st.expander("📸 Quét Bảng Giá ", expanded=False):
-                col_up, col_act = st.columns([3, 1])
-                with col_up:
-                    img_file = st.file_uploader("Upload ảnh giá thị trường", type=['png', 'jpg'], key="board_upload")
-                with col_act:
-                    st.write("") 
-                    st.write("")
-                    if img_file and active_key:
-                        if st.button("🚀 Quét Ngay"):
-                            with st.spinner("Đang quét"):
-                                raw_data = scan_market_board(Image.open(img_file), active_key)
-                                if not raw_data:
-                                    st.error("Không tìm thấy giá nào.")
-                                else:
-                                    # [MAP LOGIC V15.4] - STRICT CHECK
-                                    count = 0
-                                    for price_item in raw_data:
-                                        p_sym = str(price_item.get('symbol', '')).upper()
-                                        p_val = float(price_item.get('price', 0))
-                                        if p_val < 1000: p_val *= 1000
-                                        
-                                        for pf_item in st.session_state['portfolio']:
-                                            # Ưu tiên 1: Map Mã Cơ Sở (VHM -> VHM)
-                                            if p_sym == pf_item['underlying']:
-                                                pf_item['market_price_cs'] = p_val
-                                                count += 1
-                                            # Ưu tiên 2: Map Mã CW (CWVHM -> CWVHM)
-                                            # Chặn đứng việc VHM map vào CWVHM
-                                            elif p_sym == pf_item['symbol']: 
-                                                pf_item['market_price_cw'] = p_val
-                                                count += 1
-                                            # Map gần đúng: chỉ khi mã quét được dài > 4 (VD: CWVHM...)
-                                            elif (p_sym in pf_item['symbol']) and len(p_sym) > 4:
-                                                pf_item['market_price_cw'] = p_val
-                                                count += 1
+            
+            # 1. CONTROL MODE
+            update_mode = st.radio(
+                "Phương thức cập nhật:", 
+                ["📸 Quét Bảng Giá (Batch OCR)", "✍️ Chỉnh Sửa Thủ Công"], 
+                horizontal=True,
+                key="t2_mode"
+            )
+            is_view_only = True if update_mode.startswith("📸") else False
 
-                                    st.success(f"Đã cập nhật giá cho {count} mã!")
-                                    st.rerun()
+            # 2. OCR TOOL
+            if update_mode.startswith("📸"):
+                with st.expander("📸 Khu vực Upload Ảnh", expanded=True):
+                    col_up, col_act = st.columns([3, 1])
+                    with col_up:
+                        img_file = st.file_uploader("Chụp ảnh bảng giá", type=['png', 'jpg'], key="board_upload")
+                    with col_act:
+                        st.write("") 
+                        st.write("")
+                        if img_file and active_key:
+                            if st.button("🚀 Quét Ngay"):
+                                with st.spinner("Đang quét với Gemini 2.5 Robot Mode..."):
+                                    raw_data = scan_market_board(Image.open(img_file), active_key)
+                                    if not raw_data:
+                                        st.error("Không tìm thấy giá nào.")
+                                    else:
+                                        count = 0
+                                        for price_item in raw_data:
+                                            p_sym = str(price_item.get('symbol', '')).upper()
+                                            p_val = float(price_item.get('price', 0))
+                                            if p_val < 1000: p_val *= 1000
+                                            
+                                            for pf_item in st.session_state['portfolio']:
+                                                # Ưu tiên 1: Map Mã Cơ Sở (VHM -> VHM)
+                                                if p_sym == pf_item['underlying']:
+                                                    pf_item['market_price_cs'] = p_val
+                                                    count += 1
+                                                # Ưu tiên 2: Map Mã CW (CWVHM -> CWVHM)
+                                                elif p_sym == pf_item['symbol']: 
+                                                    pf_item['market_price_cw'] = p_val
+                                                    count += 1
+                                                # Map gần đúng: chỉ khi mã quét được dài > 4 (VD: CWVHM...)
+                                                elif (p_sym in pf_item['symbol']) and len(p_sym) > 4:
+                                                    pf_item['market_price_cw'] = p_val
+                                                    count += 1
+                                        st.success(f"Đã cập nhật giá cho {count} mã!")
+                                        st.rerun()
 
             # [OPTION B] AUTO-THEORETICAL FALLBACK
-            # Logic: Nếu chưa có giá CW (0) nhưng có giá CS (>0), tự tính Intrinsic Value
             for item in pf:
                 curr_cw = item.get('market_price_cw', 0.0)
                 curr_cs = item.get('market_price_cs', 0.0)
-                
                 if curr_cw <= 0 and curr_cs > 0:
                      intrinsic = FinancialEngine.calc_intrinsic_value(curr_cs, item['exercise_price'], item['ratio'])
-                     # Cập nhật tạm thời để hiển thị, user có thể sửa lại
                      item['market_price_cw'] = intrinsic
 
-            # Data Editor & Reports
+            # 3. DATA EDITOR (SECURE)
+            st.divider()
+            if is_view_only:
+                st.caption("🔒 Chế độ Xem: Bảng giá đang bị khóa để bảo vệ dữ liệu AI. Chọn 'Chỉnh Sửa Thủ Công' để thay đổi.")
+
             input_data = []
             for item in pf:
                 input_data.append({
@@ -373,9 +431,11 @@ def main():
                 },
                 use_container_width=True,
                 key="price_editor",
-                hide_index=True
+                hide_index=True,
+                disabled=is_view_only
             )
 
+            # 4. CORE CALCULATION
             total_nav, total_cost = 0, 0
             price_map = edited_df.set_index("Mã CW").to_dict(orient="index")
             
@@ -384,15 +444,18 @@ def main():
                 mkt_cw = user_input.get("Giá TT (CW)", 0.0)
                 mkt_cs = user_input.get("Giá CS (Gốc)", 0.0)
                 
-                item['market_price_cw'] = mkt_cw
-                item['market_price_cs'] = mkt_cs
+                # Update State nếu đang ở Mode Thủ công
+                if not is_view_only:
+                    item['market_price_cw'] = mkt_cw
+                    item['market_price_cs'] = mkt_cs
                 
-                total_nav += item['qty'] * mkt_cw
+                total_nav += item['qty'] * item['market_price_cw']
                 total_cost += item['qty'] * item['cost_price']
 
             total_pnl = total_nav - total_cost
             pnl_pct = (total_pnl / total_cost * 100) if total_cost > 0 else 0
 
+            # 5. DASHBOARD UI
             st.markdown("---")
             c1, c2, c3 = st.columns(3)
             c1.metric("NAV", f"{total_nav:,.0f} đ")
@@ -411,7 +474,7 @@ def main():
                 })
             st.dataframe(pd.DataFrame(display_data), use_container_width=True, hide_index=True)
 
-            st.markdown("### 3. PHÂN TÍCH")
+            st.markdown("### 3. PHÂN TÍCH RỦI RO")
             risk_data = []
             for item in pf:
                 bep = FinancialEngine.calc_bep(item['exercise_price'], item['cost_price'], item['ratio'])
