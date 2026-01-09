@@ -16,7 +16,6 @@ import uuid
 st.set_page_config(page_title="LPBS CW Portfolio Master", layout="wide", page_icon="💎")
 
 vn_time = datetime.utcnow() + timedelta(hours=7)
-build_time_str = vn_time.strftime("%H:%M:%S - %d/%m/%Y")
 
 # --- SECURITY ---
 if "GEMINI_API_KEY" in st.secrets:
@@ -34,15 +33,6 @@ st.markdown("""
         border-right: 1px solid #C5CAE9;
     }
     
-    .stTabs [data-baseweb="tab-list"] { gap: 8px; }
-    .stTabs [data-baseweb="tab"] {
-        height: 45px; background-color: #FFF; border-radius: 6px; 
-        color: #5C6BC0; font-weight: 600; border: 1px solid #E8EAF6;
-    }
-    .stTabs [aria-selected="true"] {
-        background-color: #3949AB !important; color: white !important; border-color: #3949AB;
-    }
-
     .report-card {
         background: white; padding: 20px; border-radius: 12px; 
         border: 1px solid #E0E0E0; border-top: 5px solid #3949AB;
@@ -51,15 +41,12 @@ st.markdown("""
     .report-value { font-size: 1.8em; font-weight: bold; margin: 5px 0; }
     .report-label { font-size: 0.9em; color: #78909C; text-transform: uppercase; letter-spacing: 0.5px; }
     
-    .profit { color: #2E7D32; }
-    .loss { color: #C62828; }
-    
     .debug-box { background-color: #263238; color: #ECEFF1; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 0.85em; white-space: pre-wrap; margin-top: 10px;}
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. DATA LAYER (PORTFOLIO UPGRADE)
+# 2. DATA LAYER
 # ==========================================
 class DataManager:
     @staticmethod
@@ -83,7 +70,6 @@ class DataManager:
 
     @staticmethod
     def get_realtime_price_simulated(symbol):
-        # Giá giả lập để test report
         base_prices = {"HPG":28500,"MWG":48200,"VHM":41800,"STB":30500,"VNM":66000,"FPT":95000,"MBB":18500,"TCB":33000,"VPB":19200,"MSN":62000,"VIB":21500,"SHB":11200,"ACB":24500}
         noise = np.random.uniform(0.98, 1.02)
         return base_prices.get(symbol, 20000) * noise
@@ -118,73 +104,85 @@ class FinancialEngine:
     def calc_bep(price_exercise, price_cost, ratio):
         return price_exercise + (price_cost * ratio)
 
-    @staticmethod
-    def get_moneyness(price_underlying, price_exercise):
-        if price_underlying > price_exercise: return "ITM", "green"
-        elif price_underlying < price_exercise: return "OTM", "red"
-        else: return "ATM", "orange"
-
 # ==========================================
-# 4. AI SERVICE LAYER (V15.0 - BATCH CORE)
+# 4. AI SERVICE LAYER (V16.0 - HYBRID 2026)
 # ==========================================
 def process_image_with_gemini(image, api_key, mode="ALL"):
     genai.configure(api_key=api_key)
-    generation_config = {"temperature": 0.0}
     
-    priority_models = [
-        'gemini-2.0-flash-exp',    
-        'gemini-1.5-flash',
-        'gemini-1.5-pro'
-    ]
-    
-    if mode == "BATCH_IMPORT":
-        prompt = """
-        Bạn là một chuyên gia nhập liệu (OCR). Nhiệm vụ: Trích xuất TOÀN BỘ các dòng trong bảng danh sách mua chứng quyền.
-        
-        Các cột cần lấy:
-        1. raw_cw: Mã Chứng quyền đầy đủ (ví dụ: STB/LPBS/CALL/EU/CASH/6M/05).
-        2. underlying: Mã CKCS (ví dụ: STB, HPG).
-        3. qty: Khối lượng mua (cột KL mua).
-        4. price: Giá khớp/Giá mua (cột Giá).
-        
-        QUAN TRỌNG:
-        - Trả về định dạng JSON là một DANH SÁCH (LIST) các đối tượng.
-        - Số liệu phải bỏ dấu phẩy ngăn cách (ví dụ: 2,000 -> 2000).
-        - Chỉ lấy số liệu, không lấy text thừa.
-        
-        Output mẫu:
-        [
-          {"raw_cw": "STB/LPBS/...", "underlying": "STB", "qty": 2000, "price": 1468},
-          {"raw_cw": "HPG/LPBS/...", "underlying": "HPG", "qty": 1000, "price": 2168}
-        ]
-        """
-    elif mode == "BUY_ORDER":
-        prompt = f"""
-        Bạn là một trợ lý tài chính (OCR). Nhiệm vụ: Trích xuất thông tin LỆNH MUA đơn lẻ.
-        Các trường cần tìm:
-        1. Mã chứng khoán (Symbol): Tìm mã Chứng quyền (CW...) hoặc mã Cơ sở.
-        2. Số lượng (Qty): Khối lượng mua.
-        3. Giá vốn (Price): Giá khớp lệnh/đơn giá.
-        4. Tổng tiền (Total Amount): Tổng giá trị giao dịch (nếu có).
-        5. Giá thị trường (Market Price): Giá hiện tại trên bảng điện.
+    # Mặc định
+    base_config = {"temperature": 0.0}
+    priority_models = []
+    prompt = ""
+    start_char = '{'
+    end_char = '}'
 
-        Trả về JSON (chỉ số): 
-        {{"symbol": "XXX", "qty": 1000, "price": 2168, "total_amount": 65040000, "market_price": 52000}}
+    # --- STRATEGY SELECTION ---
+    if mode == "BATCH_IMPORT":
+        # [CHIẾN LƯỢC 1: ROBOT MODE CHO BẢNG GIÁ]
+        # Sử dụng Gemini 2.5 Flash để thay thế 2.0 Exp (sắp bị khai tử)
+        # BẮT BUỘC: Tắt Thinking để tránh model "tự suy diễn" số liệu
+        
+        priority_models = [
+            'gemini-2.5-flash',       # Primary (2026 Standard)
+            'gemini-2.0-flash-001',   # Fallback 1 (Stable)
+            'gemini-1.5-flash'        # Fallback 2 (Legacy)
+        ]
+        
+        # Cấu hình đặc biệt: Ép kiểu Robot (No thoughts)
+        generation_config = {
+            "temperature": 0.0,
+            "thinking_config": {"include_thoughts": False, "thinking_budget": 0}, 
+            "response_mime_type": "application/json"
+        }
+        
+        prompt = """
+        Extract stock data as JSON list. 
+        NO reasoning. NO rounding. Exact pixels only.
+        
+        Required fields per item:
+        1. raw_cw: Full CW code (e.g., STB/LPBS/...).
+        2. underlying: Underlying stock (e.g., STB).
+        3. qty: Volume (Remove commas).
+        4. price: Match Price.
+        """
+        start_char = '['
+        end_char = ']'
+        
+    elif mode == "BUY_ORDER":
+        # [CHIẾN LƯỢC 2: INTELLIGENT AGENT CHO BIÊN LAI]
+        # Cần Gemini 3.0 để hiểu ngữ cảnh phức tạp (Nộp tiền, Phí...)
+        
+        priority_models = [
+            'gemini-3.0-flash-preview', # Primary (Context Aware)
+            'gemini-2.0-flash-exp',     # Fallback
+            'gemini-1.5-pro'            # Deep Reasoning Fallback
+        ]
+        
+        generation_config = base_config
+        prompt = """
+        Extract SINGLE Buy Order/Receipt details.
+        Return JSON: {"symbol": "XXX", "qty": 1000, "price": 2168, "total_amount": 0}
         """
     else:
-        prompt = "Trích xuất dữ liệu tài chính."
-    
+        # Default
+        priority_models = ['gemini-2.0-flash-exp', 'gemini-1.5-flash']
+        generation_config = base_config
+        prompt = "Extract financial data."
+
     errors_log = [] 
 
+    # --- EXECUTION LOOP ---
     for model_name in priority_models:
         try:
+            # Xử lý config riêng cho từng model (Tránh lỗi API nếu model cũ ko hỗ trợ thinking_config)
+            current_config = generation_config.copy()
+            if "thinking_config" in current_config and "gemini-2.5" not in model_name:
+                 del current_config["thinking_config"]
+
             model = genai.GenerativeModel(model_name)
-            response = model.generate_content([prompt, image], generation_config=generation_config)
+            response = model.generate_content([prompt, image], generation_config=current_config)
             text = response.text.strip()
-            
-            # Xử lý cắt chuỗi JSON linh hoạt
-            start_char = '[' if mode == "BATCH_IMPORT" else '{'
-            end_char = ']' if mode == "BATCH_IMPORT" else '}'
             
             start_idx = text.find(start_char)
             end_idx = text.rfind(end_char) + 1
@@ -192,21 +190,17 @@ def process_image_with_gemini(image, api_key, mode="ALL"):
             if start_idx != -1 and end_idx != -1:
                 try:
                     raw_json = text[start_idx:end_idx]
-                    # Dùng json.loads cho an toàn với cả list và dict
                     json_data = json.loads(raw_json)
                     
                     if mode == "BATCH_IMPORT":
-                         # Với list, trả về structure bọc ngoài để dễ xử lý
                          if isinstance(json_data, list):
                             return {"data": json_data, "_meta_model": model_name}
                          else:
                             errors_log.append(f"{model_name}: Expected List but got Dict")
                             continue
                     else:
-                        # Với Single Object
                         json_data['_meta_model'] = model_name
                         json_data['_meta_raw_text'] = text
-                        json_data['_meta_logs'] = errors_log
                         return json_data
                 except Exception as e:
                     errors_log.append(f"{model_name} Parse Error: {str(e)}")
@@ -220,7 +214,6 @@ def process_image_with_gemini(image, api_key, mode="ALL"):
             
     return {"error": "Thất bại toàn tập", "_meta_logs": errors_log}
 
-# [PATCH V14.1] Logic Quét Ngược (Single)
 def auto_map_symbol(ocr_result, master_df):
     if not ocr_result or "error" in ocr_result: return None
     det_sym = str(ocr_result.get('symbol', '')).upper().strip()
@@ -238,12 +231,8 @@ def auto_map_symbol(ocr_result, master_df):
         mask_core = master_df['Mã CS'] == best_match
         if mask_core.any(): return master_df.index[mask_core].tolist()[0]
 
-    fixed_sym = det_sym.replace("W", "V").replace("CV", "") 
-    mask_retry = master_df['Mã CS'].str.contains(fixed_sym)
-    if len(fixed_sym) >= 3 and mask_retry.any(): return master_df.index[mask_retry].tolist()[0]
     return None
 
-# [NEW V15.0] Logic Mapping Batch
 def map_batch_data(ocr_list, master_df):
     mapped_results = []
     
@@ -255,7 +244,6 @@ def map_batch_data(ocr_list, master_df):
         matched_symbol = None
         
         if not candidates.empty:
-            # Logic: Thử match 2 số cuối của raw string (VD: .../05) với mã CW (VD: CWSTB2505)
             suffix_match = re.search(r'/(\d{2})$', raw_cw.strip())
             if suffix_match:
                 suffix = suffix_match.group(1)
@@ -263,8 +251,6 @@ def map_batch_data(ocr_list, master_df):
                     if row['Mã CW'].endswith(suffix):
                         matched_symbol = row['Mã CW']
                         break
-            
-            # Fallback: Lấy mã đầu tiên nếu ko match đuôi
             if not matched_symbol:
                 matched_symbol = candidates.iloc[0]['Mã CW']
         
@@ -279,7 +265,7 @@ def map_batch_data(ocr_list, master_df):
     return pd.DataFrame(mapped_results)
 
 # ==========================================
-# 5. HELPER: PORTFOLIO & REPORT UI
+# 5. HELPER
 # ==========================================
 def add_to_portfolio(cw_row, qty, price):
     if 'portfolio' not in st.session_state: st.session_state['portfolio'] = []
@@ -302,13 +288,12 @@ def add_to_portfolio(cw_row, qty, price):
 def render_report_dashboard():
     pf = st.session_state.get('portfolio', [])
     if not pf:
-        st.info("📭 Danh mục trống. Vui lòng thêm vị thế ở Tab 1.")
+        st.info("📭 Danh mục trống.")
         return
 
     total_nav = 0
     total_cost = 0
     
-    # Simulation Logic
     for item in pf:
         cs_price = DataManager.get_realtime_price_simulated(item['underlying'])
         item['market_price_cs'] = cs_price
@@ -323,110 +308,27 @@ def render_report_dashboard():
     total_pnl = total_nav - total_cost
     pnl_pct = (total_pnl / total_cost * 100) if total_cost > 0 else 0
 
-    # --- SECTION 1: TỔNG QUAN ---
-    st.markdown("### 1. TỔNG QUAN TÀI SẢN")
+    st.markdown("### 1. TỔNG QUAN")
     c1, c2, c3 = st.columns(3)
-    
-    with c1:
-        st.markdown(f"""
-        <div class="report-card">
-            <div class="report-label">GIÁ TRỊ RÒNG (NAV)</div>
-            <div class="report-value" style="color:#1A237E">{total_nav:,.0f} VND</div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-    with c2:
-        color = "#2E7D32" if total_pnl >= 0 else "#C62828"
-        st.markdown(f"""
-        <div class="report-card">
-            <div class="report-label">TỔNG LÃI/LỖ</div>
-            <div class="report-value" style="color:{color}">{total_pnl:,.0f} VND</div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-    with c3:
-        color = "#2E7D32" if pnl_pct >= 0 else "#C62828"
-        st.markdown(f"""
-        <div class="report-card">
-            <div class="report-label">HIỆU SUẤT</div>
-            <div class="report-value" style="color:{color}">{pnl_pct:+.2f}%</div>
-        </div>
-        """, unsafe_allow_html=True)
+    c1.metric("NAV", f"{total_nav:,.0f} đ")
+    c2.metric("Lãi/Lỗ", f"{total_pnl:,.0f} đ")
+    c3.metric("Hiệu suất", f"{pnl_pct:+.2f}%")
 
-    # --- SECTION 2: CHI TIẾT DANH MỤC ---
-    st.markdown("### 2. CHI TIẾT DANH MỤC")
-    
-    display_data = []
-    for item in pf:
-        val_now = item['qty'] * item['market_price_cw']
-        val_cost = item['qty'] * item['cost_price']
-        pnl = val_now - val_cost
-        pct = (pnl / val_cost) if val_cost > 0 else 0
-        
-        display_data.append({
-            "Mã": item['symbol'],
-            "SL": item['qty'],
-            "Giá Vốn": item['cost_price'],
-            "Giá CS": item['market_price_cs'],
-            "Giá trị TT": val_now,
-            "Lãi/Lỗ": pnl,
-            "%": pct
-        })
-    
-    df_display = pd.DataFrame(display_data)
-    
-    st.dataframe(
-        df_display,
-        use_container_width=True,
-        column_config={
-            "SL": st.column_config.NumberColumn(format="%,.0f"),
-            "Giá Vốn": st.column_config.NumberColumn(format="%,.0f"),
-            "Giá CS": st.column_config.NumberColumn(format="%,.0f"),
-            "Giá trị TT": st.column_config.NumberColumn(format="%,.0f"),
-            "Lãi/Lỗ": st.column_config.NumberColumn(format="%,.0f"),
-            "%": st.column_config.NumberColumn(format="%.2%"),
-        },
-        hide_index=True
-    )
-
-    # --- SECTION 3: PHÂN TÍCH VỊ THẾ & RỦI RO ---
-    st.markdown("### 3. PHÂN TÍCH VỊ THẾ & RỦI RO")
-    risk_data = []
-    for item in pf:
-        bep = FinancialEngine.calc_bep(item['exercise_price'], item['cost_price'], item['ratio'])
-        dist = ((item['market_price_cs'] - bep) / bep) if bep > 0 else 0
-        days = DataManager.calc_days_to_maturity(item['maturity'])
-        
-        status_icon = "🟢" if dist > 0 else "🔴" if dist < -0.1 else "🟡"
-        
-        risk_data.append({
-            "Mã": item['symbol'],
-            "Hòa vốn (BEP)": bep,
-            "Khoảng cách": dist,
-            "Đáo hạn": item['maturity'],
-            "Còn lại": f"{days} ngày",
-            "Trạng thái": status_icon
-        })
-        
-    df_risk = pd.DataFrame(risk_data)
-    st.dataframe(
-        df_risk,
-        use_container_width=True,
-        column_config={
-            "Hòa vốn (BEP)": st.column_config.NumberColumn(format="%,.0f"),
-            "Khoảng cách": st.column_config.NumberColumn(format="%.1%"),
-        },
-        hide_index=True
-    )
+    st.markdown("### 2. CHI TIẾT")
+    df_display = pd.DataFrame(pf)
+    if not df_display.empty:
+        st.dataframe(
+            df_display[["symbol", "qty", "cost_price", "market_price_cw", "market_price_cs"]],
+            use_container_width=True
+        )
 
 # ==========================================
 # 6. MAIN APP
 # ==========================================
 def main():
     st.title("💎 LPBS CW Portfolio Master")
-    st.caption(f"System: V15.0 | Batch Import Core | Model: Gemini 2.0 Flash Exp")
+    st.caption(f"System: V16.0 | Hybrid 2026 Ready | 2.5 Flash & 3.0 Preview")
 
-    # [CLEAN] Khởi tạo giá trị
     if 'portfolio' not in st.session_state: st.session_state['portfolio'] = []
     if 'ocr_result' not in st.session_state: st.session_state['ocr_result'] = None
     if 'temp_qty' not in st.session_state: st.session_state['temp_qty'] = 0.0 
@@ -451,101 +353,83 @@ def main():
 
     tab_input, tab_report, tab_sim = st.tabs(["1️⃣ NHẬP LIỆU", "2️⃣ BÁO CÁO DANH MỤC", "3️⃣ GIẢ LẬP"])
 
-    # --- TAB 1: INPUT (UPGRADE V15) ---
     with tab_input:
         st.markdown("#### 📥 Nhập Liệu Danh Mục")
         mode = st.radio("Chế độ:", ["📑 Quét Hàng Loạt (Danh sách)", "📸 Quét Đơn (1 Lệnh)", "✍️ Nhập Tay"], horizontal=True)
         
-        # === MODE 1: QUÉT HÀNG LOẠT (BATCH) ===
+        # === MODE 1: QUÉT HÀNG LOẠT (V16.0) ===
         if mode == "📑 Quét Hàng Loạt (Danh sách)":
-            st.info("💡 Tip: Chụp ảnh bảng danh sách lệnh đã khớp (như hình mẫu Webview).")
+            st.info("💡 Tip: Dùng cho ảnh danh sách nhiều mã. Engine: Gemini 2.5 Flash (Robot Mode).")
             uploaded_file = st.file_uploader("Upload ảnh Danh sách", type=['png', 'jpg', 'jpeg'], key="batch_upl")
             
             if uploaded_file and active_key:
                 if st.button("🚀 Phân Tích Danh Sách", type="primary", use_container_width=True):
-                    with st.spinner("Đang đọc từng dòng với Gemini 2.0..."):
+                    with st.spinner("Đang kích hoạt Gemini 2.5 Flash (No Thinking)..."):
                         image = Image.open(uploaded_file)
                         result = process_image_with_gemini(image, active_key, mode="BATCH_IMPORT")
                         
                         if "data" in result:
-                            # Auto Map
                             df_preview = map_batch_data(result['data'], master_df)
                             st.session_state['batch_preview'] = df_preview
-                            st.success(f"Đã tìm thấy {len(df_preview)} dòng lệnh!")
+                            st.success(f"Tìm thấy {len(df_preview)} dòng!")
                         else:
-                            st.error("Không đọc được dữ liệu nào hợp lệ.")
-                            with st.expander("Log lỗi"):
-                                st.write(result)
+                            st.error("Lỗi đọc dữ liệu.")
+                            st.write(result)
 
-            # Hiển thị bảng Review nếu có dữ liệu
             if 'batch_preview' in st.session_state and not st.session_state['batch_preview'].empty:
                 st.markdown("---")
                 st.markdown("#### 📝 Duyệt & Chỉnh Sửa")
                 
-                # Cấu hình cột cho Data Editor
+                safe_options = master_df["Mã CW"].unique().tolist()
+                safe_options.append("???")
+                
                 edited_df = st.data_editor(
                     st.session_state['batch_preview'],
                     column_config={
-                        "Chốt": st.column_config.CheckboxColumn("Import?", help="Chọn để nhập dòng này", default=True),
-                        "Mã CW (Gợi ý)": st.column_config.SelectboxColumn(
-                            "Mã CW",
-                            options=master_df["Mã CW"].unique(),
-                            required=True,
-                            width="medium"
-                        ),
+                        "Chốt": st.column_config.CheckboxColumn("Import?", default=True),
+                        "Mã CW (Gợi ý)": st.column_config.SelectboxColumn("Mã CW", options=safe_options, required=True, width="medium"),
                         "KL": st.column_config.NumberColumn("Khối Lượng", format="%d"),
                         "Giá Vốn": st.column_config.NumberColumn("Giá Mua", format="%d"),
-                        "Mã Gốc": st.column_config.TextColumn("Raw Data (Tham chiếu)", disabled=True)
+                        "Mã Gốc": st.column_config.TextColumn("Raw Data", disabled=True)
                     },
-                    use_container_width=True,
-                    num_rows="dynamic"
+                    use_container_width=True, num_rows="dynamic"
                 )
                 
-                c_act1, c_act2 = st.columns([1, 3])
-                with c_act1:
-                    if st.button("✅ THỰC THI IMPORT", type="primary", use_container_width=True):
-                        count = 0
-                        for index, row in edited_df.iterrows():
-                            if row['Chốt'] and row['Mã CW (Gợi ý)'] != "???":
-                                master_info = master_df[master_df['Mã CW'] == row['Mã CW (Gợi ý)']]
-                                if not master_info.empty:
-                                    master_row = master_info.iloc[0]
-                                    add_to_portfolio(master_row, row['KL'], row['Giá Vốn'])
-                                    count += 1
-                        
-                        st.success(f"Đã nhập thành công {count} lệnh vào danh mục!")
-                        del st.session_state['batch_preview'] 
-                        st.rerun()
+                if st.button("✅ THỰC THI IMPORT", type="primary", use_container_width=True):
+                    count = 0
+                    for index, row in edited_df.iterrows():
+                        if row['Chốt'] and row['Mã CW (Gợi ý)'] != "???":
+                            master_info = master_df[master_df['Mã CW'] == row['Mã CW (Gợi ý)']]
+                            if not master_info.empty:
+                                add_to_portfolio(master_info.iloc[0], row['KL'], row['Giá Vốn'])
+                                count += 1
+                    
+                    st.success(f"Đã nhập {count} lệnh!")
+                    del st.session_state['batch_preview'] 
+                    st.rerun()
 
-        # === MODE 2 & 3: QUÉT ĐƠN & NHẬP TAY ===
+        # === MODE 2: QUÉT ĐƠN (V16.0) ===
         else:
             c1, c2 = st.columns([1, 1])
             with c1:
                 if mode == "📸 Quét Đơn (1 Lệnh)":
-                    uploaded_file = st.file_uploader("Upload ảnh (Lệnh mua/Biên lai)", type=['png', 'jpg'])
+                    st.info("💡 Engine: Gemini 3.0 Preview (Reasoning Mode)")
+                    uploaded_file = st.file_uploader("Upload ảnh Lệnh/Biên lai", type=['png', 'jpg'])
                     if uploaded_file and active_key:
-                        if st.button("🚀 Phân Tích (Gemini)", use_container_width=True):
-                            with st.spinner("Đang xử lý..."):
+                        if st.button("🚀 Phân Tích", use_container_width=True):
+                            with st.spinner("Gemini 3.0 đang suy luận..."):
                                 image = Image.open(uploaded_file)
                                 result = process_image_with_gemini(image, active_key, mode="BUY_ORDER")
                                 st.session_state['ocr_result'] = result
                                 
                                 if "error" not in result:
-                                    price = 0.0
-                                    if result.get('price'): price = float(result['price'])
-                                    elif result.get('total_amount') and result.get('qty'):
-                                        try: price = float(result['total_amount']) / float(result['qty'])
-                                        except: pass
-                                    
+                                    price = float(result.get('price', 0))
                                     if price < 1000 and price > 0: price *= 1000
-                                    
                                     st.session_state['temp_price'] = price
-                                    if result.get('qty'): st.session_state['temp_qty'] = float(result['qty'])
-                                    
+                                    st.session_state['temp_qty'] = float(result.get('qty', 0))
                                     idx = auto_map_symbol(result, master_df)
                                     if idx is not None: st.session_state['temp_index'] = idx
 
-                # Form Nhập Liệu Chung
                 cw_list = master_df["Mã CW"].unique()
                 curr_idx = int(st.session_state.get('temp_index', 0))
                 if curr_idx >= len(cw_list): curr_idx = 0
@@ -555,46 +439,27 @@ def main():
                 cost = st.number_input("Giá vốn", value=st.session_state.get('temp_price', 0.0), step=50.0)
                 
                 if st.button("💾 Lưu vào Danh mục", type="primary", use_container_width=True):
-                    if qty <= 0 or cost <= 0:
-                        st.error("Số lượng và Giá vốn phải lớn hơn 0")
-                    else:
-                        row = master_df[master_df['Mã CW'] == selected_cw].iloc[0]
-                        add_to_portfolio(row, qty, cost)
-                        st.success("Đã lưu thành công!")
-                        st.session_state['temp_qty'] = 0.0
-                        st.session_state['temp_price'] = 0.0
-                        st.rerun()
+                    row = master_df[master_df['Mã CW'] == selected_cw].iloc[0]
+                    add_to_portfolio(row, qty, cost)
+                    st.rerun()
 
             with c2:
                 if mode == "📸 Quét Đơn (1 Lệnh)" and st.session_state.get('ocr_result'):
-                    res = st.session_state['ocr_result']
                     st.markdown("#### 🔍 Glass Box Debug")
-                    with st.expander("Chi tiết xử lý AI", expanded=True):
-                        st.markdown(f"**Model:** `{res.get('_meta_model', 'N/A')}`")
-                        st.json(res)
+                    st.json(st.session_state['ocr_result'])
 
     with tab_report:
         render_report_dashboard()
 
     with tab_sim:
-        if not st.session_state['portfolio']:
-            st.info("Vui lòng thêm vị thế vào danh mục trước.")
-        else:
+        if st.session_state['portfolio']:
             pf_df = pd.DataFrame(st.session_state['portfolio'])
-            sim_cw = st.selectbox("Chọn mã để giả lập:", pf_df['symbol'].unique())
+            sim_cw = st.selectbox("Chọn mã:", pf_df['symbol'].unique())
             item = next(x for x in st.session_state['portfolio'] if x['symbol'] == sim_cw)
-            
-            curr_cs = item['market_price_cs'] if item['market_price_cs'] > 0 else 20000
-            st.info(f"Giả lập cho **{sim_cw}** (Giá vốn: {item['cost_price']:,.0f})")
-            
-            target_cs = st.slider("Giá Cơ sở Tương lai:", int(curr_cs * 0.8), int(curr_cs * 1.5), int(curr_cs))
-            
+            st.info(f"Giả lập: **{sim_cw}**")
+            target_cs = st.slider("Giá Cơ sở:", int(item['market_price_cs']*0.8), int(item['market_price_cs']*1.5), int(item['market_price_cs']))
             sim_val = FinancialEngine.calc_intrinsic_value(target_cs, item['exercise_price'], item['ratio'])
-            sim_pnl = (sim_val - item['cost_price']) * item['qty']
-            
-            c1, c2 = st.columns(2)
-            c1.metric("Giá CW Lý thuyết", f"{sim_val:,.0f} đ")
-            c2.metric("Lãi/Lỗ Dự kiến", f"{sim_pnl:,.0f} đ", delta_color="normal")
+            st.metric("Giá CW Lý thuyết", f"{sim_val:,.0f} đ")
 
 if __name__ == "__main__":
     main()
