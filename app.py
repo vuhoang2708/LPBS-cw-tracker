@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import google.generativeai as genai
 from json import JSONDecoder
+import json  # Added for Batch Import
 from datetime import datetime, timedelta
 from PIL import Image
 import uuid
@@ -38,26 +39,26 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. DATA LAYER
+# 2. DATA LAYER (UPDATED)
 # ==========================================
 class DataManager:
     @staticmethod
     def get_default_master_data():
-        # [DATA] Master Data chuẩn hóa (CWMWG...)
+        # [UPDATE 19/01/2026] 13 Mã Chứng quyền mới (Thay thế list cũ)
         data = [
-            {"Mã CW": "CWMWG2519", "Mã CS": "MWG", "Tỷ lệ CĐ": "5:1", "Giá thực hiện": 88000, "Ngày đáo hạn": "2026-06-29"},
-            {"Mã CW": "CWVHM2522", "Mã CS": "VHM", "Tỷ lệ CĐ": "10:1", "Giá thực hiện": 106000, "Ngày đáo hạn": "2026-12-28"},
-            {"Mã CW": "CWSTB2505", "Mã CS": "STB", "Tỷ lệ CĐ": "3:1", "Giá thực hiện": 60000, "Ngày đáo hạn": "2026-06-29"},
-            {"Mã CW": "CWHPG2516", "Mã CS": "HPG", "Tỷ lệ CĐ": "4:1", "Giá thực hiện": 32000, "Ngày đáo hạn": "2026-12-28"},
-            {"Mã CW": "CWACB2502", "Mã CS": "ACB", "Tỷ lệ CĐ": "2:1", "Giá thực hiện": 28000, "Ngày đáo hạn": "2026-12-28"},
-            {"Mã CW": "CWMBB2504", "Mã CS": "MBB", "Tỷ lệ CĐ": "2:1", "Giá thực hiện": 22000, "Ngày đáo hạn": "2026-12-28"},
-            {"Mã CW": "CWMSN2518", "Mã CS": "MSN", "Tỷ lệ CĐ": "10:1", "Giá thực hiện": 95000, "Ngày đáo hạn": "2026-12-28"},
-            {"Mã CW": "CWVNM2524", "Mã CS": "VNM", "Tỷ lệ CĐ": "8:1", "Giá thực hiện": 72000, "Ngày đáo hạn": "2026-12-28"},
-            {"Mã CW": "CWSHB2525", "Mã CS": "SHB", "Tỷ lệ CĐ": "1:1", "Giá thực hiện": 12500, "Ngày đáo hạn": "2026-06-29"},
-            {"Mã CW": "CWFPT2514", "Mã CS": "FPT", "Tỷ lệ CĐ": "8:1", "Giá thực hiện": 110000, "Ngày đáo hạn": "2026-12-28"},
-            {"Mã CW": "CWTCB2507", "Mã CS": "TCB", "Tỷ lệ CĐ": "5:1", "Giá thực hiện": 45000, "Ngày đáo hạn": "2026-12-28"},
-            {"Mã CW": "CWVPB2511", "Mã CS": "VPB", "Tỷ lệ CĐ": "3:1", "Giá thực hiện": 30000, "Ngày đáo hạn": "2026-12-28"},
-            {"Mã CW": "CWVIB2510", "Mã CS": "VIB", "Tỷ lệ CĐ": "2:1", "Giá thực hiện": 23000, "Ngày đáo hạn": "2026-06-29"}
+            {"Mã CW": "CACB2604", "Mã CS": "ACB", "Tỷ lệ CĐ": "2:1", "Giá thực hiện": 26000, "Ngày đáo hạn": "2026-12-28"},
+            {"Mã CW": "CMBB2605", "Mã CS": "MBB", "Tỷ lệ CĐ": "2:1", "Giá thực hiện": 27000, "Ngày đáo hạn": "2026-12-28"},
+            {"Mã CW": "CSTB2605", "Mã CS": "STB", "Tỷ lệ CĐ": "3:1", "Giá thực hiện": 60000, "Ngày đáo hạn": "2026-06-29"},
+            {"Mã CW": "CTCB2602", "Mã CS": "TCB", "Tỷ lệ CĐ": "3:1", "Giá thực hiện": 36000, "Ngày đáo hạn": "2026-06-29"},
+            {"Mã CW": "CVIB2601", "Mã CS": "VIB", "Tỷ lệ CĐ": "2:1", "Giá thực hiện": 18000, "Ngày đáo hạn": "2026-12-28"},
+            {"Mã CW": "CVPB2604", "Mã CS": "VPB", "Tỷ lệ CĐ": "3:1", "Giá thực hiện": 30000, "Ngày đáo hạn": "2026-06-29"},
+            {"Mã CW": "CFPT2604", "Mã CS": "FPT", "Tỷ lệ CĐ": "2:1", "Giá thực hiện": 96000, "Ngày đáo hạn": "2026-12-28"},
+            {"Mã CW": "CHPG2605", "Mã CS": "HPG", "Tỷ lệ CĐ": "2:1", "Giá thực hiện": 27000, "Ngày đáo hạn": "2026-12-28"},
+            {"Mã CW": "CMSN2601", "Mã CS": "MSN", "Tỷ lệ CĐ": "5:1", "Giá thực hiện": 80000, "Ngày đáo hạn": "2026-12-28"},
+            {"Mã CW": "CMWG2605", "Mã CS": "MWG", "Tỷ lệ CĐ": "5:1", "Giá thực hiện": 88000, "Ngày đáo hạn": "2026-06-29"},
+            {"Mã CW": "CVHM2604", "Mã CS": "VHM", "Tỷ lệ CĐ": "10:1", "Giá thực hiện": 106000, "Ngày đáo hạn": "2026-12-28"},
+            {"Mã CW": "CVNM2601", "Mã CS": "VNM", "Tỷ lệ CĐ": "5:1", "Giá thực hiện": 64000, "Ngày đáo hạn": "2026-12-28"},
+            {"Mã CW": "CSHB2601", "Mã CS": "SHB", "Tỷ lệ CĐ": "2:1", "Giá thực hiện": 18000, "Ngày đáo hạn": "2026-06-29"}
         ]
         return pd.DataFrame(data)
 
@@ -92,18 +93,16 @@ class FinancialEngine:
         return price_exercise + (price_cost * ratio)
 
 # ==========================================
-# 4. AI SERVICE LAYER (HYBRID ENGINE)
+# 4. AI SERVICE LAYER (HYBRID ENGINE - V15.7 + BATCH EXTENSION)
 # ==========================================
 def process_receipt_with_gemini(image, api_key):
     """
-    Xử lý Lệnh mua/Biên lai (Single Item)
-    Model: Gemini 3.0 Flash Preview (Ưu tiên hiểu ngữ cảnh)
+    [KEPT ORIGINAL] Xử lý Lệnh mua/Biên lai (Single Item)
     """
     genai.configure(api_key=api_key)
     generation_config = {"temperature": 0.0}
     priority_models = ['gemini-3-flash-preview', 'gemini-2.0-flash-exp']
     
-    # Prompt ép trả về 0 để tránh NULL
     prompt = f"""
     Bạn là một trợ lý tài chính (OCR). Nhiệm vụ: Trích xuất thông tin LỆNH MUA / BIÊN LAI NỘP TIỀN.
     
@@ -138,11 +137,84 @@ def process_receipt_with_gemini(image, api_key):
             
     return {"error": "Thất bại toàn tập", "_meta_logs": errors_log}
 
+def process_batch_list_with_gemini(image, api_key):
+    """
+    [NEW ADDITION] Xử lý Danh sách Import (Batch Items)
+    Model: Gemini 2.5 Flash (Robot Mode - No Thinking)
+    """
+    genai.configure(api_key=api_key)
+    priority_models = ['gemini-2.5-flash', 'gemini-2.0-flash-exp']
+    
+    # Cấu hình Robot Mode (Tắt suy luận để tránh bịa số)
+    generation_config = {
+        "temperature": 0.0,
+        "thinking_config": {"include_thoughts": False, "thinking_budget": 0},
+        "response_mime_type": "application/json"
+    }
+
+    prompt = """
+    Extract stock data as JSON list. 
+    NO reasoning. NO rounding. Exact pixels only.
+    
+    Required fields per item:
+    1. raw_cw: Full CW code (e.g., STB/LPBS/...).
+    2. underlying: Underlying stock (e.g., STB).
+    3. qty: Volume (Remove commas).
+    4. price: Match Price.
+    """
+    
+    for model_name in priority_models:
+        try:
+            current_config = generation_config.copy()
+            if "gemini-2.5" not in model_name: del current_config["thinking_config"]
+
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content([prompt, image], generation_config=current_config)
+            text = response.text.strip()
+            
+            start = text.find('[')
+            end = text.rfind(']') + 1
+            if start != -1 and end != 0:
+                try:
+                    return json.loads(text[start:end])
+                except: pass
+        except Exception:
+            continue
+    return []
+
+def map_batch_data(ocr_list, master_df):
+    """ [NEW ADDITION] Mapping logic cho Batch Import """
+    mapped_results = []
+    for item in ocr_list:
+        raw_cw = item.get('raw_cw', '')
+        underlying = item.get('underlying', '')
+        candidates = master_df[master_df['Mã CS'] == underlying]
+        matched_symbol = None
+        
+        if not candidates.empty:
+            # Logic: Match 2 số cuối (VD: .../05 -> CSTB2605)
+            # Với mã mới C[Sym]26[xx], logic này vẫn hoạt động tốt
+            suffix_match = re.search(r'/(\d{2})$', raw_cw.strip())
+            if suffix_match:
+                suffix = suffix_match.group(1)
+                for idx, row in candidates.iterrows():
+                    if row['Mã CW'].endswith(suffix):
+                        matched_symbol = row['Mã CW']
+                        break
+            if not matched_symbol: matched_symbol = candidates.iloc[0]['Mã CW']
+        
+        mapped_results.append({
+            "Chốt": True, 
+            "Mã CW (Gợi ý)": matched_symbol if matched_symbol else "???",
+            "Mã Gốc": raw_cw,
+            "KL": float(item.get('qty', 0)),
+            "Giá Vốn": float(item.get('price', 0))
+        })
+    return pd.DataFrame(mapped_results)
+
 def scan_market_board(image, api_key):
     """
-    [ROBOT MODE] Xử lý Bảng giá (Batch Items)
-    Model: Gemini 2.5 Flash (Vision First)
-    Style: Machine Instruction Prompt
+    [KEPT ORIGINAL] Xử lý Bảng giá (Batch Items)
     """
     genai.configure(api_key=api_key)
     
@@ -221,7 +293,7 @@ def add_to_portfolio(cw_row, qty, price):
 # ==========================================
 def main():
     st.title("💎 LPBS CW Portfolio Master")
-    st.caption(f"System: V15.7 | Final Release | Mode: Hybrid AI")
+    st.caption(f"System: V15.8 | Stable V10 + Batch Core | Data Updated 19/01")
 
     # State Management (Clean Init)
     if 'portfolio' not in st.session_state: st.session_state['portfolio'] = []
@@ -250,13 +322,64 @@ def main():
 
     # --- TAB 1: INPUT ---
     with tab_input:
+        # [MODIFIED UI START] Thêm "📑 Quét Danh Sách" vào Radio
         c1, c2 = st.columns([1, 1])
         with c1:
             st.markdown("#### 📥 Thêm Vị Thế Mới")
-            mode = st.radio("Chế độ:", ["📸 Quét OCR (Lệnh mua/Biên lai)", "✍️ Nhập Tay"], horizontal=True)
+            mode = st.radio("Chế độ:", ["📑 Quét Danh Sách (Batch)", "📸 Quét OCR (Lệnh mua/Biên lai)", "✍️ Nhập Tay"], horizontal=True)
             
-            # BLOCK 1: OCR Logic
-            if mode.startswith("📸"):
+            # --- FEATURE 1: BATCH IMPORT (NEW) ---
+            if mode == "📑 Quét Danh Sách (Batch)":
+                st.info("💡 Engine: Gemini 2.5 Flash (Robot Mode) - Dành cho danh sách nhiều mã.")
+                uploaded_file = st.file_uploader("Upload ảnh Danh sách", type=['png', 'jpg', 'jpeg'], key="batch_upl")
+                
+                if uploaded_file and active_key:
+                    if st.button("🚀 Phân Tích Danh Sách", type="primary", use_container_width=True):
+                        with st.spinner("Đang kích hoạt Gemini 2.5 Flash (No Thinking)..."):
+                            image = Image.open(uploaded_file)
+                            result = process_batch_list_with_gemini(image, active_key)
+                            
+                            if result:
+                                df_preview = map_batch_data(result, master_df)
+                                st.session_state['batch_preview'] = df_preview
+                                st.success(f"Tìm thấy {len(df_preview)} dòng!")
+                            else:
+                                st.error("Lỗi đọc dữ liệu hoặc không tìm thấy JSON.")
+                
+                # Bảng Preview & Import (Chỉ hiện khi ở Mode Batch)
+                if 'batch_preview' in st.session_state and not st.session_state['batch_preview'].empty:
+                    st.markdown("---")
+                    
+                    # Fix lỗi option "???" tránh ValueError
+                    safe_options = master_df["Mã CW"].unique().tolist()
+                    safe_options.append("???")
+
+                    edited_df = st.data_editor(
+                        st.session_state['batch_preview'],
+                        column_config={
+                            "Chốt": st.column_config.CheckboxColumn("Import?", default=True),
+                            "Mã CW (Gợi ý)": st.column_config.SelectboxColumn("Mã CW", options=safe_options, required=True),
+                            "KL": st.column_config.NumberColumn("Khối Lượng", format="%d"),
+                            "Giá Vốn": st.column_config.NumberColumn("Giá Mua", format="%d"),
+                            "Mã Gốc": st.column_config.TextColumn("Raw Data", disabled=True)
+                        },
+                        use_container_width=True, num_rows="dynamic"
+                    )
+                    
+                    if st.button("✅ THỰC THI IMPORT", type="primary", use_container_width=True):
+                        count = 0
+                        for index, row in edited_df.iterrows():
+                            if row['Chốt'] and row['Mã CW (Gợi ý)'] != "???":
+                                master_info = master_df[master_df['Mã CW'] == row['Mã CW (Gợi ý)']]
+                                if not master_info.empty:
+                                    add_to_portfolio(master_info.iloc[0], row['KL'], row['Giá Vốn'])
+                                    count += 1
+                        st.success(f"Đã nhập thành công {count} lệnh!")
+                        del st.session_state['batch_preview']
+                        st.rerun()
+
+            # --- FEATURE 2: SINGLE OCR (KEPT ORIGINAL LOGIC) ---
+            elif mode.startswith("📸"):
                 uploaded_file = st.file_uploader("Upload ảnh Biên lai", type=['png', 'jpg'])
                 if uploaded_file and active_key:
                     if st.button("🚀 Phân Tích (Gemini 3)", use_container_width=True):
@@ -279,15 +402,18 @@ def main():
                                 idx = auto_map_symbol(result, master_df)
                                 if idx is not None: st.session_state['temp_index'] = idx
             
-            # BLOCK 2: FORM NHẬP LIỆU (SMART VISIBILITY)
+            # --- FORM NHẬP LIỆU CHUNG (KEPT ORIGINAL LOGIC) ---
             should_show_form = False
-            is_locked = True if mode.startswith("📸") else False
-
+            # Nếu đang ở mode Nhập Tay -> Luôn hiện
             if "Nhập Tay" in mode:
                 should_show_form = True
+            # Nếu đang ở mode Single OCR -> Chỉ hiện khi đã có kết quả
             elif mode.startswith("📸") and st.session_state.get('ocr_result'):
                 should_show_form = True
             
+            # Khóa input nếu đang ở chế độ xem kết quả OCR (như code cũ)
+            is_locked = True if (mode.startswith("📸") and "Batch" not in mode) else False
+
             if should_show_form:
                 st.divider()
                 if is_locked:
@@ -335,8 +461,9 @@ def main():
                         st.session_state['ocr_result'] = None
                         st.rerun()
 
-            elif mode.startswith("📸") and not st.session_state.get('ocr_result'):
+            elif mode.startswith("📸") and not st.session_state.get('ocr_result') and "Batch" not in mode:
                 st.info("👈 Vui lòng Upload ảnh và bấm 'Phân Tích' để hiển thị thông tin.")
+        # [MODIFIED UI END]
 
         with c2:
             if st.session_state['ocr_result']:
@@ -346,7 +473,7 @@ def main():
                     st.markdown(f"**Model:** `{res.get('_meta_model', 'N/A')}`")
                     st.json(res)
 
-    # --- TAB 2: UPDATE PRICE ---
+    # --- TAB 2: UPDATE PRICE (KEPT ORIGINAL V15.7) ---
     with tab_report:
         pf = st.session_state.get('portfolio', [])
         if not pf:
@@ -386,15 +513,12 @@ def main():
                                             if p_val < 1000: p_val *= 1000
                                             
                                             for pf_item in st.session_state['portfolio']:
-                                                # Ưu tiên 1: Map Mã Cơ Sở (VHM -> VHM)
                                                 if p_sym == pf_item['underlying']:
                                                     pf_item['market_price_cs'] = p_val
                                                     count += 1
-                                                # Ưu tiên 2: Map Mã CW (CWVHM -> CWVHM)
                                                 elif p_sym == pf_item['symbol']: 
                                                     pf_item['market_price_cw'] = p_val
                                                     count += 1
-                                                # Map gần đúng: chỉ khi mã quét được dài > 4 (VD: CWVHM...)
                                                 elif (p_sym in pf_item['symbol']) and len(p_sym) > 4:
                                                     pf_item['market_price_cw'] = p_val
                                                     count += 1
@@ -490,7 +614,7 @@ def main():
                 })
             st.dataframe(pd.DataFrame(risk_data), use_container_width=True, hide_index=True)
 
-    # --- TAB 3: SIMULATOR ---
+    # --- TAB 3: SIMULATOR (KEPT ORIGINAL V15.7) ---
     with tab_sim:
         if not st.session_state['portfolio']:
             st.info("Vui lòng thêm vị thế trước.")
